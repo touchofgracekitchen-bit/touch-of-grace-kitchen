@@ -40,35 +40,32 @@ function _arrayWithHoles(r) { if (Array.isArray(r)) return r; }
 const _React = React,
   useState = _React.useState,
   useEffect = _React.useEffect;
-function usePersistedState(key, def) {
-  var lsKey = 'tog_' + key;
+function usePersistedState(k, d) {
+  var lk = "tog_" + k;
   var _s = React.useState(function () {
     try {
-      var s = localStorage.getItem(lsKey);
+      var s = localStorage.getItem(lk);
       if (s !== null) return JSON.parse(s);
     } catch (e) {}
-    return def;
+    return d;
   });
-  var val = _s[0],
-    setVal = _s[1];
-  var _l = React.useState(false);
-  var setLoaded = _l[1];
+  var v = _s[0],
+    sv = _s[1];
   React.useEffect(function () {
-    dbLoad(key).then(function (remote) {
-      if (remote !== null && remote !== undefined) {
-        setVal(remote);
+    dbLoad(k).then(function (r) {
+      if (r != null) {
+        sv(r);
         try {
-          localStorage.setItem(lsKey, JSON.stringify(remote));
+          localStorage.setItem(lk, JSON.stringify(r));
         } catch (e) {}
       }
-      setLoaded(true);
     });
     var t = setInterval(function () {
-      dbLoad(key).then(function (remote) {
-        if (remote !== null && remote !== undefined) {
-          setVal(remote);
+      dbLoad(k).then(function (r) {
+        if (r != null) {
+          sv(r);
           try {
-            localStorage.setItem(lsKey, JSON.stringify(remote));
+            localStorage.setItem(lk, JSON.stringify(r));
           } catch (e) {}
         }
       });
@@ -76,86 +73,83 @@ function usePersistedState(key, def) {
     return function () {
       clearInterval(t);
     };
-  }, [key]);
+  }, [k]);
   var save = function (fn) {
-    setVal(function (prev) {
-      var next = typeof fn === 'function' ? fn(prev) : fn;
+    sv(function (p) {
+      var n = typeof fn === "function" ? fn(p) : fn;
       try {
-        localStorage.setItem(lsKey, JSON.stringify(next));
+        localStorage.setItem(lk, JSON.stringify(n));
       } catch (e) {}
-      dbSave(key, next);
-      return next;
+      dbSave(k, n);
+      return n;
     });
   };
-  return [val, save, true];
+  return [v, save, true];
 }
-function useSharedState(key, def) {
-  var lsKey = 'tog_shared_' + key;
+function useSharedState(k, d) {
+  var lk = "tog_shared_" + k;
   var _s = React.useState(function () {
     try {
-      var s = localStorage.getItem(lsKey);
+      var s = localStorage.getItem(lk);
       if (s !== null) return JSON.parse(s);
     } catch (e) {}
-    return def;
+    return d;
   });
-  var val = _s[0],
-    setVal = _s[1];
+  var v = _s[0],
+    sv = _s[1];
   React.useEffect(function () {
-    dbLoad(key).then(function (remote) {
-      if (remote !== null && remote !== undefined) {
-        setVal(remote);
+    dbLoad(k).then(function (r) {
+      if (r != null) {
+        sv(r);
         try {
-          localStorage.setItem(lsKey, JSON.stringify(remote));
+          localStorage.setItem(lk, JSON.stringify(r));
         } catch (e) {}
       }
     });
-    var channel = null;
+    var ch = null;
     if (db) {
       try {
-        channel = db.channel('rt_' + key).on('postgres_changes', {
-          event: '*',
-          schema: 'public',
-          table: 'tog_data',
-          filter: 'key=eq.' + key
-        }, function (payload) {
-          if (payload.new && payload.new.value !== undefined) {
-            setVal(payload.new.value);
+        ch = db.channel("rt_" + k).on("postgres_changes", {
+          event: "*",
+          schema: "public",
+          table: "tog_data",
+          filter: "key=eq." + k
+        }, function (p) {
+          if (p.new && p.new.value !== undefined) {
+            sv(p.new.value);
             try {
-              localStorage.setItem(lsKey, JSON.stringify(payload.new.value));
+              localStorage.setItem(lk, JSON.stringify(p.new.value));
             } catch (e) {}
           }
         }).subscribe();
-      } catch (e) {
-        console.warn('Realtime:', e.message);
-      }
+      } catch (e) {}
     }
     var t = setInterval(function () {
-      dbLoad(key).then(function (remote) {
-        if (remote !== null && remote !== undefined) setVal(remote);
+      dbLoad(k).then(function (r) {
+        if (r != null) sv(r);
       });
     }, 4000);
     return function () {
       clearInterval(t);
-      if (channel && db) {
+      if (ch && db) {
         try {
-          db.removeChannel(channel);
+          db.removeChannel(ch);
         } catch (e) {}
       }
     };
-  }, [key]);
+  }, [k]);
   var save = function (fn) {
-    setVal(function (prev) {
-      var next = typeof fn === 'function' ? fn(prev) : fn;
+    sv(function (p) {
+      var n = typeof fn === "function" ? fn(p) : fn;
       try {
-        localStorage.setItem(lsKey, JSON.stringify(next));
+        localStorage.setItem(lk, JSON.stringify(n));
       } catch (e) {}
-      dbSave(key, next);
-      return next;
+      dbSave(k, n);
+      return n;
     });
   };
-  return [val, save, true];
+  return [v, save, true];
 }
-
 // -- COLORS -------------------------------------------------------------------
 const C = {
   gold: "#C9A84C",
@@ -634,7 +628,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Costco (Cranbrook)": 6.49,
     "Save-On-Foods (Sparwood)": 7.99
-  }
+  },
+  avgCost: 6.49
 }, {
   id: 2,
   name: "Pork Shoulder",
@@ -645,7 +640,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Costco (Cranbrook)": 8.49,
     "Save-On-Foods (Sparwood)": 9.99
-  }
+  },
+  avgCost: 8.49
 }, {
   id: 3,
   name: "Oxtail",
@@ -656,7 +652,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Jamaican Import (Vancouver)": 18.50,
     "Save-On-Foods (Sparwood)": 21.00
-  }
+  },
+  avgCost: 18.50
 }, {
   id: 4,
   name: "Rice",
@@ -667,7 +664,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Costco (Cranbrook)": 1.89,
     "Real Canadian Superstore": 2.19
-  }
+  },
+  avgCost: 1.89
 }, {
   id: 5,
   name: "Red Kidney Beans",
@@ -678,7 +676,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Jamaican Import (Vancouver)": 3.50,
     "Real Canadian Superstore": 3.99
-  }
+  },
+  avgCost: 3.50
 }, {
   id: 6,
   name: "Scotch Bonnet Peppers",
@@ -689,7 +688,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Jamaican Import (Vancouver)": 12.00,
     "Save-On-Foods (Sparwood)": 18.00
-  }
+  },
+  avgCost: 12.00
 }, {
   id: 7,
   name: "Coconut Milk (canned)",
@@ -700,7 +700,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Costco (Cranbrook)": 1.99,
     "Jamaican Import (Vancouver)": 2.50
-  }
+  },
+  avgCost: 1.99
 }, {
   id: 8,
   name: "Allspice (pimento)",
@@ -711,7 +712,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Jamaican Import (Vancouver)": 28.00,
     "Real Canadian Superstore": 35.00
-  }
+  },
+  avgCost: 28.00
 }, {
   id: 9,
   name: "Cooking Oil",
@@ -722,7 +724,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Costco (Cranbrook)": 4.99,
     "Real Canadian Superstore": 6.49
-  }
+  },
+  avgCost: 4.99
 }, {
   id: 10,
   name: "Sweet Potato",
@@ -733,7 +736,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Save-On-Foods (Sparwood)": 3.49,
     "Local Farm": 2.50
-  }
+  },
+  avgCost: 3.49
 }, {
   id: 11,
   name: "Frozen Fries",
@@ -744,7 +748,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Costco (Cranbrook)": 3.49,
     "Save-On-Foods (Sparwood)": 4.99
-  }
+  },
+  avgCost: 3.49
 }, {
   id: 12,
   name: "Cabbage (coleslaw)",
@@ -755,7 +760,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Save-On-Foods (Sparwood)": 2.99,
     "Local Farm": 1.99
-  }
+  },
+  avgCost: 2.99
 }, {
   id: 13,
   name: "Macaroni Pasta",
@@ -766,7 +772,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Costco (Cranbrook)": 2.49,
     "Real Canadian Superstore": 2.99
-  }
+  },
+  avgCost: 2.49
 }, {
   id: 14,
   name: "Cornmeal (festival)",
@@ -777,7 +784,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Jamaican Import (Vancouver)": 4.50,
     "Real Canadian Superstore": 3.99
-  }
+  },
+  avgCost: 4.50
 }, {
   id: 15,
   name: "Mixed Vegetables (frozen)",
@@ -788,7 +796,8 @@ const INVENTORY_INIT = [{
   prices: {
     "Costco (Cranbrook)": 4.99,
     "Save-On-Foods (Sparwood)": 5.99
-  }
+  },
+  avgCost: 4.99
 }];
 
 // -- RECIPES ------------------------------------------------------------------
@@ -2947,15 +2956,33 @@ function InventoryTab(_ref10) {
     countLog = _usePersistedState2[0],
     setCountLog = _usePersistedState2[1],
     logLoaded = _usePersistedState2[2];
-  // recipe editing
-  const _useState67 = useState(null),
+  const _usePersistedState3 = usePersistedState("tog-receive-log", []),
+    _usePersistedState4 = _slicedToArray(_usePersistedState3, 3),
+    receiveLog = _usePersistedState4[0],
+    setReceiveLog = _usePersistedState4[1],
+    rcvLoaded = _usePersistedState4[2];
+  const _useState67 = useState(false),
     _useState68 = _slicedToArray(_useState67, 2),
-    editRecipeId = _useState68[0],
-    setEditRecipeId = _useState68[1];
-  const _useState69 = useState([]),
+    receiveMode = _useState68[0],
+    setReceiveMode = _useState68[1];
+  const _useState69 = useState({
+      itemId: null,
+      qty: "",
+      price: "",
+      supplier: ""
+    }),
     _useState70 = _slicedToArray(_useState69, 2),
-    recipeLines = _useState70[0],
-    setRecipeLines = _useState70[1];
+    receiveForm = _useState70[0],
+    setReceiveForm = _useState70[1];
+  // recipe editing
+  const _useState71 = useState(null),
+    _useState72 = _slicedToArray(_useState71, 2),
+    editRecipeId = _useState72[0],
+    setEditRecipeId = _useState72[1];
+  const _useState73 = useState([]),
+    _useState74 = _slicedToArray(_useState73, 2),
+    recipeLines = _useState74[0],
+    setRecipeLines = _useState74[1];
   const CATS = ["Proteins", "Dry Goods", "Produce", "Pantry", "Spices", "Sides", "Beverages", "Packaging"];
   const allSuppliers = settings.suppliers || [];
   const lowStock = inventory.filter(i => i.stock <= i.minStock);
@@ -3147,7 +3174,7 @@ function InventoryTab(_ref10) {
   } : r));
   const removeLine = idx => setRecipeLines(recipeLines.filter((_, i) => i !== idx));
   const filtered = inventory.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
-  return /*#__PURE__*/React.createElement("div", null, lowStock.length > 0 && /*#__PURE__*/React.createElement("div", {
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, lowStock.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.lightRed,
       border: "1px solid " + C.red,
@@ -3575,6 +3602,19 @@ function InventoryTab(_ref10) {
       color: C.gold
     }, "Edit"), /*#__PURE__*/React.createElement(Btn, {
       small: true,
+      onClick: () => {
+        setReceiveForm({
+          itemId: item.id,
+          qty: "",
+          price: String(item.avgCost || ""),
+          supplier: ""
+        });
+        setReceiveMode(true);
+      },
+      color: C.green,
+      outline: true
+    }, "+ Receive"), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
       onClick: () => setInventory(inventory.filter(i => i.id !== item.id)),
       color: C.red,
       outline: true
@@ -3642,7 +3682,7 @@ function InventoryTab(_ref10) {
     style: {
       background: C.green
     }
-  }, ["Item", "Category", "System Qty", "Physical Count", "Variance", "Status"].map(h => /*#__PURE__*/React.createElement("th", {
+  }, ["Item", "Category", "System Qty", "Physical Count", "Variance", "Cost/Unit", "Variance Cost", "Status"].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: {
       color: C.white,
@@ -3726,6 +3766,17 @@ function InventoryTab(_ref10) {
         color: varColor
       }
     }, variance !== null ? (variance > 0 ? "+" : "") + variance.toFixed(2) + " " + item.unit : "--"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "9px 12px",
+        color: C.charcoal
+      }
+    }, item.avgCost ? fmt(item.avgCost) : "-"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "9px 12px",
+        fontWeight: 700,
+        color: variance === null ? C.gray : variance < 0 ? C.red : variance > 0 ? C.blue : C.green
+      }
+    }, variance === null ? "—" : item.avgCost ? fmt(Math.abs(variance) * item.avgCost) + (variance < 0 ? " loss" : " surplus") : "—"), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "9px 12px"
       }
@@ -3998,38 +4049,161 @@ function InventoryTab(_ref10) {
       onClick: () => openRecipe(item),
       color: recipe.length > 0 ? C.gold : C.blue
     }, recipe.length > 0 ? "Edit" : "Set Recipe")));
-  }))))));
+  })))))), receiveMode && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.5)",
+      zIndex: 1000,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    },
+    onClick: () => setReceiveMode(false)
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.white,
+      borderRadius: 12,
+      padding: 28,
+      width: 380,
+      maxWidth: "95vw"
+    },
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      color: C.dark,
+      marginBottom: 16
+    }
+  }, "Receive Stock"), (() => {
+    const item = inventory.find(i => i.id === receiveForm.itemId);
+    if (!item) return null;
+    const handleReceive = () => {
+      const qty = parseFloat(receiveForm.qty),
+        price = parseFloat(receiveForm.price);
+      if (isNaN(qty) || qty <= 0 || isNaN(price) || price <= 0) return;
+      const oldStock = item.stock || 0,
+        oldCost = item.avgCost || price;
+      const newAvg = (oldStock * oldCost + qty * price) / (oldStock + qty);
+      setInventory(inventory.map(i => i.id === item.id ? {
+        ...i,
+        stock: oldStock + qty,
+        avgCost: parseFloat(newAvg.toFixed(4))
+      } : i));
+      setReceiveLog(prev => [...prev, {
+        id: Date.now(),
+        date: today(),
+        time: nowStr(),
+        itemId: item.id,
+        itemName: item.name,
+        qty,
+        price,
+        supplier: receiveForm.supplier,
+        prevStock: oldStock,
+        newStock: oldStock + qty,
+        prevAvgCost: oldCost,
+        newAvgCost: newAvg
+      }]);
+      setReceiveMode(false);
+    };
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+      style: {
+        color: C.charcoal,
+        marginBottom: 16,
+        fontSize: 14
+      }
+    }, /*#__PURE__*/React.createElement("b", null, item.name), " \u2014 Stock: ", /*#__PURE__*/React.createElement("b", null, item.stock, " ", item.unit), " @ avg ", /*#__PURE__*/React.createElement("b", null, item.avgCost ? fmt(item.avgCost) : "not set", "/", item.unit)), [["Qty received (" + item.unit + ")", "qty", "number"], ["Cost per unit ($)", "price", "number"], ["Supplier", "supplier", "text"]].map(_ref15 => {
+      let _ref16 = _slicedToArray(_ref15, 3),
+        lbl = _ref16[0],
+        f = _ref16[1],
+        t = _ref16[2];
+      return /*#__PURE__*/React.createElement("div", {
+        key: f,
+        style: {
+          marginBottom: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 12,
+          color: C.charcoal,
+          marginBottom: 4
+        }
+      }, lbl), /*#__PURE__*/React.createElement("input", {
+        type: t,
+        value: receiveForm[f],
+        onChange: e => setReceiveForm({
+          ...receiveForm,
+          [f]: e.target.value
+        }),
+        style: {
+          width: "100%",
+          padding: "8px 10px",
+          border: "1px solid " + C.border,
+          borderRadius: 6,
+          fontSize: 14
+        },
+        step: "0.01"
+      }));
+    }), receiveForm.qty && receiveForm.price && !isNaN(parseFloat(receiveForm.qty)) && !isNaN(parseFloat(receiveForm.price)) && (() => {
+      const q = parseFloat(receiveForm.qty),
+        p = parseFloat(receiveForm.price),
+        os = item.stock || 0,
+        oc = item.avgCost || p;
+      const na = (os * oc + q * p) / (os + q);
+      return /*#__PURE__*/React.createElement("div", {
+        style: {
+          background: C.cream,
+          borderRadius: 8,
+          padding: 12,
+          marginBottom: 16,
+          fontSize: 13
+        }
+      }, /*#__PURE__*/React.createElement("div", null, "New stock: ", /*#__PURE__*/React.createElement("b", null, (os + q).toFixed(2), " ", item.unit)), /*#__PURE__*/React.createElement("div", null, "New avg cost: ", /*#__PURE__*/React.createElement("b", null, fmt(na), "/", item.unit), " (was ", fmt(oc), ")"), /*#__PURE__*/React.createElement("div", null, "Total value received: ", /*#__PURE__*/React.createElement("b", null, fmt(q * p))));
+    })(), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        justifyContent: "flex-end"
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      onClick: () => setReceiveMode(false),
+      color: C.charcoal,
+      outline: true
+    }, "Cancel"), /*#__PURE__*/React.createElement(Btn, {
+      onClick: handleReceive,
+      color: C.green
+    }, "Confirm Receipt")));
+  })())));
 }
 
 // -- EXPENSES TAB -------------------------------------------------------------
-function ExpensesTab(_ref15) {
-  let expenses = _ref15.expenses,
-    setExpenses = _ref15.setExpenses,
-    settings = _ref15.settings;
+function ExpensesTab(_ref17) {
+  let expenses = _ref17.expenses,
+    setExpenses = _ref17.setExpenses,
+    settings = _ref17.settings;
   const CATS = settings.expenseCategories || ["Lease", "Insurance", "Food & Inventory", "Supplies", "Marketing", "Utilities", "Staff Wages", "Licensing", "Other"];
   const CAT_PALETTE = [C.green, C.gold, C.darkGold, C.lightGreen, C.purple, C.blue, C.orange, "#AD1457", C.charcoal, C.teal, C.red, "#795548", "#607D8B"];
   const catColor = cat => {
     const idx = CATS.indexOf(cat);
     return idx >= 0 ? CAT_PALETTE[idx % CAT_PALETTE.length] : C.charcoal;
   };
-  const _useState71 = useState({
+  const _useState75 = useState({
       date: today(),
       cat: CATS[0] || "Other",
       desc: "",
       amount: "",
       supplier: ""
     }),
-    _useState72 = _slicedToArray(_useState71, 2),
-    form = _useState72[0],
-    setForm = _useState72[1];
-  const _useState73 = useState(false),
-    _useState74 = _slicedToArray(_useState73, 2),
-    addMode = _useState74[0],
-    setAddMode = _useState74[1];
-  const _useState75 = useState(today().slice(0, 7)),
     _useState76 = _slicedToArray(_useState75, 2),
-    filterMonth = _useState76[0],
-    setFilterMonth = _useState76[1];
+    form = _useState76[0],
+    setForm = _useState76[1];
+  const _useState77 = useState(false),
+    _useState78 = _slicedToArray(_useState77, 2),
+    addMode = _useState78[0],
+    setAddMode = _useState78[1];
+  const _useState79 = useState(today().slice(0, 7)),
+    _useState80 = _slicedToArray(_useState79, 2),
+    filterMonth = _useState80[0],
+    setFilterMonth = _useState80[1];
   const filtered = expenses.filter(e => e.date.startsWith(filterMonth));
   const total = filtered.reduce((s, e) => s + e.amount, 0);
   const CAT_COLORS = {};
@@ -4095,9 +4269,9 @@ function ExpensesTab(_ref15) {
       fontSize: 12,
       color: C.gray
     }
-  }, "No expenses this month."), byCat.map(_ref16 => {
-    let c = _ref16.c,
-      t = _ref16.t;
+  }, "No expenses this month."), byCat.map(_ref18 => {
+    let c = _ref18.c,
+      t = _ref18.t;
     return /*#__PURE__*/React.createElement("div", {
       key: c,
       style: {
@@ -4294,39 +4468,39 @@ function ExpensesTab(_ref15) {
 }
 
 // -- STAFF TAB ----------------------------------------------------------------
-function StaffTab(_ref17) {
-  let staff = _ref17.staff,
-    setStaff = _ref17.setStaff,
-    positions = _ref17.positions;
+function StaffTab(_ref19) {
+  let staff = _ref19.staff,
+    setStaff = _ref19.setStaff,
+    positions = _ref19.positions;
   const loaded = true; // staff is passed from App (already loaded)
-  const _useState77 = useState(false),
-    _useState78 = _slicedToArray(_useState77, 2),
-    addMode = _useState78[0],
-    setAddMode = _useState78[1];
-  const _useState79 = useState(null),
-    _useState80 = _slicedToArray(_useState79, 2),
-    editId = _useState80[0],
-    setEditId = _useState80[1];
   const _useState81 = useState(false),
     _useState82 = _slicedToArray(_useState81, 2),
-    showPin = _useState82[0],
-    setShowPin = _useState82[1];
+    addMode = _useState82[0],
+    setAddMode = _useState82[1];
   const _useState83 = useState(null),
     _useState84 = _slicedToArray(_useState83, 2),
-    pinModal = _useState84[0],
-    setPinModal = _useState84[1];
-  const _useState85 = useState(""),
+    editId = _useState84[0],
+    setEditId = _useState84[1];
+  const _useState85 = useState(false),
     _useState86 = _slicedToArray(_useState85, 2),
-    pinInput = _useState86[0],
-    setPinInput = _useState86[1];
-  const _useState87 = useState(""),
+    showPin = _useState86[0],
+    setShowPin = _useState86[1];
+  const _useState87 = useState(null),
     _useState88 = _slicedToArray(_useState87, 2),
-    pinError = _useState88[0],
-    setPinError = _useState88[1];
-  const _useState89 = useState("bi-weekly"),
+    pinModal = _useState88[0],
+    setPinModal = _useState88[1];
+  const _useState89 = useState(""),
     _useState90 = _slicedToArray(_useState89, 2),
-    payPeriod = _useState90[0],
-    setPayPeriod = _useState90[1];
+    pinInput = _useState90[0],
+    setPinInput = _useState90[1];
+  const _useState91 = useState(""),
+    _useState92 = _slicedToArray(_useState91, 2),
+    pinError = _useState92[0],
+    setPinError = _useState92[1];
+  const _useState93 = useState("bi-weekly"),
+    _useState94 = _slicedToArray(_useState93, 2),
+    payPeriod = _useState94[0],
+    setPayPeriod = _useState94[1];
   const blankForm = {
     name: "",
     role: "",
@@ -4337,10 +4511,10 @@ function StaffTab(_ref17) {
     startDate: today(),
     positionId: 3
   };
-  const _useState91 = useState(blankForm),
-    _useState92 = _slicedToArray(_useState91, 2),
-    form = _useState92[0],
-    setForm = _useState92[1];
+  const _useState95 = useState(blankForm),
+    _useState96 = _slicedToArray(_useState95, 2),
+    form = _useState96[0],
+    setForm = _useState96[1];
   const mult = payPeriod === "weekly" ? 1 : payPeriod === "bi-weekly" ? 2 : 4;
   const payrollTotal = staff.filter(s => s.type !== "Owner").reduce((sum, s) => sum + s.hourlyRate * s.hoursPerWeek * mult, 0);
   const getPos = s => (positions || POSITIONS_INIT).find(p => p.id === s.positionId) || {
@@ -5011,30 +5185,30 @@ function StaffTab(_ref17) {
 }
 
 // -- ACCOUNTS TAB -------------------------------------------------------------
-function AccountsTab(_ref18) {
-  let accounts = _ref18.accounts,
-    setAccounts = _ref18.setAccounts,
-    sales = _ref18.sales;
-  const _useState93 = useState(null),
-    _useState94 = _slicedToArray(_useState93, 2),
-    selected = _useState94[0],
-    setSelected = _useState94[1];
-  const _useState95 = useState(false),
-    _useState96 = _slicedToArray(_useState95, 2),
-    addMode = _useState96[0],
-    setAddMode = _useState96[1];
-  const _useState97 = useState("orders"),
+function AccountsTab(_ref20) {
+  let accounts = _ref20.accounts,
+    setAccounts = _ref20.setAccounts,
+    sales = _ref20.sales;
+  const _useState97 = useState(null),
     _useState98 = _slicedToArray(_useState97, 2),
-    view = _useState98[0],
-    setView = _useState98[1];
-  const _useState99 = useState({
+    selected = _useState98[0],
+    setSelected = _useState98[1];
+  const _useState99 = useState(false),
+    _useState100 = _slicedToArray(_useState99, 2),
+    addMode = _useState100[0],
+    setAddMode = _useState100[1];
+  const _useState101 = useState("orders"),
+    _useState102 = _slicedToArray(_useState101, 2),
+    view = _useState102[0],
+    setView = _useState102[1];
+  const _useState103 = useState({
       from: today().slice(0, 7) + "-01",
       to: today()
     }),
-    _useState100 = _slicedToArray(_useState99, 2),
-    invoiceRange = _useState100[0],
-    setInvoiceRange = _useState100[1];
-  const _useState101 = useState({
+    _useState104 = _slicedToArray(_useState103, 2),
+    invoiceRange = _useState104[0],
+    setInvoiceRange = _useState104[1];
+  const _useState105 = useState({
       name: "",
       contact: "",
       phone: "",
@@ -5042,25 +5216,25 @@ function AccountsTab(_ref18) {
       billingCycle: "weekly",
       notes: ""
     }),
-    _useState102 = _slicedToArray(_useState101, 2),
-    form = _useState102[0],
-    setForm = _useState102[1];
-  const _useState103 = useState(""),
-    _useState104 = _slicedToArray(_useState103, 2),
-    pmtAmount = _useState104[0],
-    setPmtAmount = _useState104[1];
-  const _useState105 = useState("Transfer"),
     _useState106 = _slicedToArray(_useState105, 2),
-    pmtMethod = _useState106[0],
-    setPmtMethod = _useState106[1];
+    form = _useState106[0],
+    setForm = _useState106[1];
   const _useState107 = useState(""),
     _useState108 = _slicedToArray(_useState107, 2),
-    pmtNote = _useState108[0],
-    setPmtNote = _useState108[1];
-  const _useState109 = useState(false),
+    pmtAmount = _useState108[0],
+    setPmtAmount = _useState108[1];
+  const _useState109 = useState("Transfer"),
     _useState110 = _slicedToArray(_useState109, 2),
-    pmtSaved = _useState110[0],
-    setPmtSaved = _useState110[1];
+    pmtMethod = _useState110[0],
+    setPmtMethod = _useState110[1];
+  const _useState111 = useState(""),
+    _useState112 = _slicedToArray(_useState111, 2),
+    pmtNote = _useState112[0],
+    setPmtNote = _useState112[1];
+  const _useState113 = useState(false),
+    _useState114 = _slicedToArray(_useState113, 2),
+    pmtSaved = _useState114[0],
+    setPmtSaved = _useState114[1];
   const onAccountOrders = acc => sales.filter(s => s.accountId === acc.id && s.paymentStatus === "on-account");
   const pendingOrders = acc => onAccountOrders(acc).filter(s => !s.invoiced);
   const totalOwed = acc => pendingOrders(acc).reduce((s, o) => s + o.total, 0);
@@ -5743,26 +5917,26 @@ function AccountsTab(_ref18) {
 }
 
 // -- CATERING TAB -------------------------------------------------------------
-function CateringTab(_ref19) {
-  let cateringEvents = _ref19.cateringEvents,
-    setCateringEvents = _ref19.setCateringEvents,
-    menu = _ref19.menu,
-    recipes = _ref19.recipes,
-    inventory = _ref19.inventory,
-    setInventory = _ref19.setInventory;
-  const _useState111 = useState(null),
-    _useState112 = _slicedToArray(_useState111, 2),
-    selId = _useState112[0],
-    setSelId = _useState112[1];
-  const _useState113 = useState("details"),
-    _useState114 = _slicedToArray(_useState113, 2),
-    catSec = _useState114[0],
-    setCatSec = _useState114[1];
-  const _useState115 = useState(false),
+function CateringTab(_ref21) {
+  let cateringEvents = _ref21.cateringEvents,
+    setCateringEvents = _ref21.setCateringEvents,
+    menu = _ref21.menu,
+    recipes = _ref21.recipes,
+    inventory = _ref21.inventory,
+    setInventory = _ref21.setInventory;
+  const _useState115 = useState(null),
     _useState116 = _slicedToArray(_useState115, 2),
-    addMode = _useState116[0],
-    setAddMode = _useState116[1];
-  const _useState117 = useState({
+    selId = _useState116[0],
+    setSelId = _useState116[1];
+  const _useState117 = useState("details"),
+    _useState118 = _slicedToArray(_useState117, 2),
+    catSec = _useState118[0],
+    setCatSec = _useState118[1];
+  const _useState119 = useState(false),
+    _useState120 = _slicedToArray(_useState119, 2),
+    addMode = _useState120[0],
+    setAddMode = _useState120[1];
+  const _useState121 = useState({
       eventName: "",
       clientName: "",
       clientPhone: "",
@@ -5778,49 +5952,49 @@ function CateringTab(_ref19) {
       discountType: "none",
       discountValue: 0
     }),
-    _useState118 = _slicedToArray(_useState117, 2),
-    newForm = _useState118[0],
-    setNewForm = _useState118[1];
-  const _useState119 = useState(""),
-    _useState120 = _slicedToArray(_useState119, 2),
-    pickMenuId = _useState120[0],
-    setPickMenuId = _useState120[1];
-  const _useState121 = useState("1"),
     _useState122 = _slicedToArray(_useState121, 2),
-    pickQty = _useState122[0],
-    setPickQty = _useState122[1];
+    newForm = _useState122[0],
+    setNewForm = _useState122[1];
   const _useState123 = useState(""),
     _useState124 = _slicedToArray(_useState123, 2),
-    pickPrice = _useState124[0],
-    setPickPrice = _useState124[1];
-  const _useState125 = useState(""),
+    pickMenuId = _useState124[0],
+    setPickMenuId = _useState124[1];
+  const _useState125 = useState("1"),
     _useState126 = _slicedToArray(_useState125, 2),
-    pickNote = _useState126[0],
-    setPickNote = _useState126[1];
-  const _useState127 = useState(false),
+    pickQty = _useState126[0],
+    setPickQty = _useState126[1];
+  const _useState127 = useState(""),
     _useState128 = _slicedToArray(_useState127, 2),
-    showAddItem = _useState128[0],
-    setShowAddItem = _useState128[1];
+    pickPrice = _useState128[0],
+    setPickPrice = _useState128[1];
   const _useState129 = useState(""),
     _useState130 = _slicedToArray(_useState129, 2),
-    pmtAmount = _useState130[0],
-    setPmtAmount = _useState130[1];
-  const _useState131 = useState("Transfer"),
+    pickNote = _useState130[0],
+    setPickNote = _useState130[1];
+  const _useState131 = useState(false),
     _useState132 = _slicedToArray(_useState131, 2),
-    pmtMethod = _useState132[0],
-    setPmtMethod = _useState132[1];
+    showAddItem = _useState132[0],
+    setShowAddItem = _useState132[1];
   const _useState133 = useState(""),
     _useState134 = _slicedToArray(_useState133, 2),
-    pmtNote = _useState134[0],
-    setPmtNote = _useState134[1];
-  const _useState135 = useState(false),
+    pmtAmount = _useState134[0],
+    setPmtAmount = _useState134[1];
+  const _useState135 = useState("Transfer"),
     _useState136 = _slicedToArray(_useState135, 2),
-    pmtSaved = _useState136[0],
-    setPmtSaved = _useState136[1];
-  const _useState137 = useState(false),
+    pmtMethod = _useState136[0],
+    setPmtMethod = _useState136[1];
+  const _useState137 = useState(""),
     _useState138 = _slicedToArray(_useState137, 2),
-    deductConf = _useState138[0],
-    setDeductConf = _useState138[1];
+    pmtNote = _useState138[0],
+    setPmtNote = _useState138[1];
+  const _useState139 = useState(false),
+    _useState140 = _slicedToArray(_useState139, 2),
+    pmtSaved = _useState140[0],
+    setPmtSaved = _useState140[1];
+  const _useState141 = useState(false),
+    _useState142 = _slicedToArray(_useState141, 2),
+    deductConf = _useState142[0],
+    setDeductConf = _useState142[1];
   const ev = selId ? cateringEvents.find(e => e.id === selId) : null;
   const updateEv = updates => setCateringEvents(prev => prev.map(e => e.id === selId ? {
     ...e,
@@ -6221,10 +6395,10 @@ function CateringTab(_ref19) {
       marginBottom: 14,
       flexWrap: "wrap"
     }
-  }, [["details", "Details"], ["order", "Order Builder"], ["production", "Production Sheet"], ["quote", "Quote / Invoice"], ["payments", "Payments"]].map(_ref20 => {
-    let _ref21 = _slicedToArray(_ref20, 2),
-      k = _ref21[0],
-      l = _ref21[1];
+  }, [["details", "Details"], ["order", "Order Builder"], ["production", "Production Sheet"], ["quote", "Quote / Invoice"], ["payments", "Payments"]].map(_ref22 => {
+    let _ref23 = _slicedToArray(_ref22, 2),
+      k = _ref23[0],
+      l = _ref23[1];
     return /*#__PURE__*/React.createElement("button", {
       key: k,
       onClick: () => setCatSec(k),
@@ -6246,10 +6420,10 @@ function CateringTab(_ref19) {
       gridTemplateColumns: "1fr 1fr",
       gap: 12
     }
-  }, [["Event Name", "eventName"], ["Client Name", "clientName"], ["Phone", "clientPhone"], ["Email", "clientEmail"], ["Venue", "venue"], ["Quote #", "quoteNumber"]].map(_ref22 => {
-    let _ref23 = _slicedToArray(_ref22, 2),
-      l = _ref23[0],
-      k = _ref23[1];
+  }, [["Event Name", "eventName"], ["Client Name", "clientName"], ["Phone", "clientPhone"], ["Email", "clientEmail"], ["Venue", "venue"], ["Quote #", "quoteNumber"]].map(_ref24 => {
+    let _ref25 = _slicedToArray(_ref24, 2),
+      l = _ref25[0],
+      k = _ref25[1];
     return /*#__PURE__*/React.createElement("div", {
       key: k
     }, /*#__PURE__*/React.createElement("label", {
@@ -7093,66 +7267,66 @@ function CateringTab(_ref19) {
 }
 
 // -- END OF DAY ---------------------------------------------------------------
-function EODTab(_ref24) {
-  let sales = _ref24.sales,
-    settings = _ref24.settings,
-    refunds = _ref24.refunds,
-    setRefunds = _ref24.setRefunds,
-    accounts = _ref24.accounts,
-    setAccounts = _ref24.setAccounts,
-    staff = _ref24.staff,
-    positions = _ref24.positions,
-    cateringEvents = _ref24.cateringEvents;
-  const _usePersistedState3 = usePersistedState("tog-eod", []),
-    _usePersistedState4 = _slicedToArray(_usePersistedState3, 3),
-    eodRecords = _usePersistedState4[0],
-    setEodRecords = _usePersistedState4[1],
-    loaded = _usePersistedState4[2];
-  const _useState139 = useState(today()),
-    _useState140 = _slicedToArray(_useState139, 2),
-    selDate = _useState140[0],
-    setSelDate = _useState140[1];
-  const _useState141 = useState("balance"),
-    _useState142 = _slicedToArray(_useState141, 2),
-    eodSec = _useState142[0],
-    setEodSec = _useState142[1]; // balance | transactions
-  const _useState143 = useState(""),
+function EODTab(_ref26) {
+  let sales = _ref26.sales,
+    settings = _ref26.settings,
+    refunds = _ref26.refunds,
+    setRefunds = _ref26.setRefunds,
+    accounts = _ref26.accounts,
+    setAccounts = _ref26.setAccounts,
+    staff = _ref26.staff,
+    positions = _ref26.positions,
+    cateringEvents = _ref26.cateringEvents;
+  const _usePersistedState5 = usePersistedState("tog-eod", []),
+    _usePersistedState6 = _slicedToArray(_usePersistedState5, 3),
+    eodRecords = _usePersistedState6[0],
+    setEodRecords = _usePersistedState6[1],
+    loaded = _usePersistedState6[2];
+  const _useState143 = useState(today()),
     _useState144 = _slicedToArray(_useState143, 2),
-    cashCounted = _useState144[0],
-    setCashCounted = _useState144[1];
-  const _useState145 = useState(""),
+    selDate = _useState144[0],
+    setSelDate = _useState144[1];
+  const _useState145 = useState("balance"),
     _useState146 = _slicedToArray(_useState145, 2),
-    cardTotal = _useState146[0],
-    setCardTotal = _useState146[1];
+    eodSec = _useState146[0],
+    setEodSec = _useState146[1]; // balance | transactions
   const _useState147 = useState(""),
     _useState148 = _slicedToArray(_useState147, 2),
-    transferTotal = _useState148[0],
-    setTransferTotal = _useState148[1];
+    cashCounted = _useState148[0],
+    setCashCounted = _useState148[1];
   const _useState149 = useState(""),
     _useState150 = _slicedToArray(_useState149, 2),
-    notes = _useState150[0],
-    setNotes = _useState150[1];
-  const _useState151 = useState(false),
+    cardTotal = _useState150[0],
+    setCardTotal = _useState150[1];
+  const _useState151 = useState(""),
     _useState152 = _slicedToArray(_useState151, 2),
-    saved = _useState152[0],
-    setSaved = _useState152[1];
-  // Refund state
-  const _useState153 = useState(null),
+    transferTotal = _useState152[0],
+    setTransferTotal = _useState152[1];
+  const _useState153 = useState(""),
     _useState154 = _slicedToArray(_useState153, 2),
-    refundOrder = _useState154[0],
-    setRefundOrder = _useState154[1]; // sale object being refunded
-  const _useState155 = useState(""),
+    notes = _useState154[0],
+    setNotes = _useState154[1];
+  const _useState155 = useState(false),
     _useState156 = _slicedToArray(_useState155, 2),
-    refundReason = _useState156[0],
-    setRefundReason = _useState156[1];
-  const _useState157 = useState("Cash"),
+    saved = _useState156[0],
+    setSaved = _useState156[1];
+  // Refund state
+  const _useState157 = useState(null),
     _useState158 = _slicedToArray(_useState157, 2),
-    refundMethod = _useState158[0],
-    setRefundMethod = _useState158[1];
-  const _useState159 = useState(null),
+    refundOrder = _useState158[0],
+    setRefundOrder = _useState158[1]; // sale object being refunded
+  const _useState159 = useState(""),
     _useState160 = _slicedToArray(_useState159, 2),
-    refundPin = _useState160[0],
-    setRefundPin = _useState160[1]; // pending refund needing PIN
+    refundReason = _useState160[0],
+    setRefundReason = _useState160[1];
+  const _useState161 = useState("Cash"),
+    _useState162 = _slicedToArray(_useState161, 2),
+    refundMethod = _useState162[0],
+    setRefundMethod = _useState162[1];
+  const _useState163 = useState(null),
+    _useState164 = _slicedToArray(_useState163, 2),
+    refundPin = _useState164[0],
+    setRefundPin = _useState164[1]; // pending refund needing PIN
 
   // Only PAID sales count for EOD balancing (On Account is deferred)
   const allDay = sales.filter(s => s.date === selDate);
@@ -7703,17 +7877,17 @@ function EODTab(_ref24) {
 }
 
 // -- EXPENSE TRENDS VIEW (extracted component to avoid hooks-in-render) --------
-function ExpenseTrendsView(_ref25) {
-  let expenses = _ref25.expenses,
-    settings = _ref25.settings;
-  const _useState161 = useState("All"),
-    _useState162 = _slicedToArray(_useState161, 2),
-    expCat = _useState162[0],
-    setExpCat = _useState162[1];
-  const _useState163 = useState("monthly"),
-    _useState164 = _slicedToArray(_useState163, 2),
-    expPeriod = _useState164[0],
-    setExpPeriod = _useState164[1];
+function ExpenseTrendsView(_ref27) {
+  let expenses = _ref27.expenses,
+    settings = _ref27.settings;
+  const _useState165 = useState("All"),
+    _useState166 = _slicedToArray(_useState165, 2),
+    expCat = _useState166[0],
+    setExpCat = _useState166[1];
+  const _useState167 = useState("monthly"),
+    _useState168 = _slicedToArray(_useState167, 2),
+    expPeriod = _useState168[0],
+    setExpPeriod = _useState168[1];
   const BASE_CATS = settings && settings.expenseCategories ? settings.expenseCategories : ["Lease", "Insurance", "Food & Inventory", "Supplies", "Marketing", "Utilities", "Staff Wages", "Licensing", "Other"];
   const EXPENSE_CATS = ["All", ...BASE_CATS];
   const CAT_PALETTE2 = [C.green, C.gold, C.darkGold, C.lightGreen, C.purple, C.blue, C.orange, "#AD1457", C.charcoal, C.teal, C.red, "#795548"];
@@ -7874,14 +8048,14 @@ function ExpenseTrendsView(_ref25) {
       color: C.gray,
       fontSize: 13
     }
-  }, "No data.") : sortedCats.map(_ref26 => {
-    let _ref27 = _slicedToArray(_ref26, 2),
-      cat = _ref27[0],
-      total = _ref27[1];
-    const pct = Math.round(total / sortedCats.reduce((s, _ref28) => {
-      let _ref29 = _slicedToArray(_ref28, 2),
-        _ = _ref29[0],
-        v = _ref29[1];
+  }, "No data.") : sortedCats.map(_ref28 => {
+    let _ref29 = _slicedToArray(_ref28, 2),
+      cat = _ref29[0],
+      total = _ref29[1];
+    const pct = Math.round(total / sortedCats.reduce((s, _ref30) => {
+      let _ref31 = _slicedToArray(_ref30, 2),
+        _ = _ref31[0],
+        v = _ref31[1];
       return s + v;
     }, 0) * 100);
     return /*#__PURE__*/React.createElement("div", {
@@ -7923,24 +8097,25 @@ function ExpenseTrendsView(_ref25) {
 }
 
 // -- REPORTS TAB --------------------------------------------------------------
-function ReportsTab(_ref30) {
-  let sales = _ref30.sales,
-    expenses = _ref30.expenses,
-    settings = _ref30.settings,
-    refunds = _ref30.refunds,
-    accounts = _ref30.accounts,
-    menu = _ref30.menu,
-    recipes = _ref30.recipes,
-    inventory = _ref30.inventory,
-    cateringEvents = _ref30.cateringEvents;
-  const _useState165 = useState("monthly"),
-    _useState166 = _slicedToArray(_useState165, 2),
-    view = _useState166[0],
-    setView = _useState166[1];
-  const _useState167 = useState(today().slice(0, 7)),
-    _useState168 = _slicedToArray(_useState167, 2),
-    selMonth = _useState168[0],
-    setSelMonth = _useState168[1];
+function ReportsTab(_ref32) {
+  let sales = _ref32.sales,
+    expenses = _ref32.expenses,
+    settings = _ref32.settings,
+    refunds = _ref32.refunds,
+    accounts = _ref32.accounts,
+    menu = _ref32.menu,
+    recipes = _ref32.recipes,
+    inventory = _ref32.inventory,
+    cateringEvents = _ref32.cateringEvents,
+    countLog = _ref32.countLog;
+  const _useState169 = useState("monthly"),
+    _useState170 = _slicedToArray(_useState169, 2),
+    view = _useState170[0],
+    setView = _useState170[1];
+  const _useState171 = useState(today().slice(0, 7)),
+    _useState172 = _slicedToArray(_useState171, 2),
+    selMonth = _useState172[0],
+    setSelMonth = _useState172[1];
   const proj = settings.projections || {};
   // Only count COLLECTED revenue (exclude on-account until paid)
   const paidSales = sales.filter(s => s.paymentStatus !== "on-account");
@@ -7986,10 +8161,10 @@ function ReportsTab(_ref30) {
       marginBottom: 18,
       flexWrap: "wrap"
     }
-  }, [["monthly", "Monthly Overview"], ["detail", "Monthly Detail"], ["cost", "Cost Analysis"], ["expenses", "Expense Trends"], ["adjustments", "Adjustments"], ["tax", "Tax Summary"]].map(_ref31 => {
-    let _ref32 = _slicedToArray(_ref31, 2),
-      v = _ref32[0],
-      l = _ref32[1];
+  }, [["monthly", "Monthly Overview"], ["detail", "Monthly Detail"], ["cost", "Cost Analysis"], ["expenses", "Expense Trends"], ["adjustments", "Adjustments"], ["tax", "Tax Summary"], ["variance", "Inventory Variance"]].map(_ref33 => {
+    let _ref34 = _slicedToArray(_ref33, 2),
+      v = _ref34[0],
+      l = _ref34[1];
     return /*#__PURE__*/React.createElement("button", {
       key: v,
       onClick: () => setView(v),
@@ -8120,12 +8295,12 @@ function ReportsTab(_ref30) {
     label: "Orders",
     val: mSales.length,
     color: C.blue
-  })), topItems.length > 0 ? /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Top Selling Items This Month"), topItems.map(_ref33 => {
-    let _ref34 = _slicedToArray(_ref33, 2),
-      name = _ref34[0],
-      _ref34$ = _ref34[1],
-      qty = _ref34$.qty,
-      rev = _ref34$.rev;
+  })), topItems.length > 0 ? /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Top Selling Items This Month"), topItems.map(_ref35 => {
+    let _ref36 = _slicedToArray(_ref35, 2),
+      name = _ref36[0],
+      _ref36$ = _ref36[1],
+      qty = _ref36$.qty,
+      rev = _ref36$.rev;
     return /*#__PURE__*/React.createElement("div", {
       key: name,
       style: {
@@ -8638,17 +8813,182 @@ function ReportsTab(_ref30) {
       color: C.charcoal,
       marginTop: 10
     }
-  }, "* GST ITC estimates assume 5% GST on expenses. Verify with your accountant.")));
+  }, "* GST ITC estimates assume 5% GST on expenses. Verify with your accountant.")), view === "variance" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h3", {
+    style: {
+      color: C.dark,
+      marginBottom: 4
+    }
+  }, "Inventory Variance Report"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.charcoal,
+      fontSize: 13,
+      marginBottom: 16
+    }
+  }, "Variance = Physical Count \u2212 System Quantity. Negative = stock missing (loss). Positive = surplus found."), (countLog || []).length === 0 ? /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.gray,
+      textAlign: "center",
+      padding: 20
+    }
+  }, "No stock counts recorded yet. Complete a stock count in the Inventory tab to see variance data here.")) : [...(countLog || [])].reverse().map(log => {
+    const totalLoss = log.adjustments.filter(a => a.diff < 0).reduce((s, a) => {
+      const inv = inventory.find(i => i.id === a.id);
+      return s + Math.abs(a.diff) * (inv?.avgCost || 0);
+    }, 0);
+    const daySales = sales.filter(s => s.date === log.date).reduce((t, s) => t + s.total, 0);
+    return /*#__PURE__*/React.createElement(Card, {
+      key: log.id,
+      style: {
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        marginBottom: 12,
+        flexWrap: "wrap",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        color: C.dark,
+        fontSize: 15
+      }
+    }, log.date, " \u2014 ", log.time), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: C.charcoal
+      }
+    }, log.adjustments.length, " item", log.adjustments.length !== 1 ? "s" : "", " adjusted")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 12,
+        flexWrap: "wrap"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: "center",
+        background: C.lightRed,
+        borderRadius: 8,
+        padding: "8px 16px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.red
+      }
+    }, "VARIANCE LOSS"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        color: C.red,
+        fontSize: 18
+      }
+    }, fmt(totalLoss))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: "center",
+        background: "#E8F5E9",
+        borderRadius: 8,
+        padding: "8px 16px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.green
+      }
+    }, "DAY REVENUE"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        color: C.green,
+        fontSize: 18
+      }
+    }, fmt(daySales))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        textAlign: "center",
+        background: totalLoss > daySales ? C.lightRed : C.lightGold,
+        borderRadius: 8,
+        padding: "8px 16px"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: totalLoss > daySales ? C.red : C.darkGold
+      }
+    }, "REVENUE COVERS LOSS?"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        color: totalLoss > daySales ? C.red : C.green,
+        fontSize: 18
+      }
+    }, daySales === 0 ? "No sales" : totalLoss === 0 ? "No loss" : totalLoss <= daySales ? "✓ Yes" : "✗ No")))), /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: C.green
+      }
+    }, ["Item", "Before", "After", "Variance", "Cost/Unit", "Variance Cost"].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: {
+        color: C.white,
+        padding: "8px 10px",
+        textAlign: "left",
+        fontSize: 11
+      }
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, log.adjustments.map((a, i) => {
+      const inv = inventory.find(it => it.id === a.id);
+      const varCost = inv?.avgCost ? Math.abs(a.diff) * inv.avgCost : null;
+      return /*#__PURE__*/React.createElement("tr", {
+        key: a.id,
+        style: {
+          background: i % 2 === 0 ? C.white : C.cream
+        }
+      }, /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "7px 10px",
+          fontWeight: 600
+        }
+      }, a.name), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "7px 10px"
+        }
+      }, a.before, " ", a.unit), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "7px 10px"
+        }
+      }, a.after, " ", a.unit), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "7px 10px",
+          fontWeight: 700,
+          color: a.diff < 0 ? C.red : C.blue
+        }
+      }, a.diff > 0 ? "+" : "", a.diff.toFixed(2), " ", a.unit), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "7px 10px"
+        }
+      }, inv?.avgCost ? fmt(inv.avgCost) : "-"), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "7px 10px",
+          fontWeight: 700,
+          color: a.diff < 0 ? C.red : C.blue
+        }
+      }, varCost ? fmt(varCost) + (a.diff < 0 ? " loss" : " surplus") : "-"));
+    }))));
+  })));
 }
 
 // -- NEW POSITION FORM (extracted to avoid hooks-in-render violation) ----------
-function NewPositionForm(_ref35) {
-  let positions = _ref35.positions,
-    setPositions = _ref35.setPositions;
-  const _useState169 = useState(""),
-    _useState170 = _slicedToArray(_useState169, 2),
-    name = _useState170[0],
-    setName = _useState170[1];
+function NewPositionForm(_ref37) {
+  let positions = _ref37.positions,
+    setPositions = _ref37.setPositions;
+  const _useState173 = useState(""),
+    _useState174 = _slicedToArray(_useState173, 2),
+    name = _useState174[0],
+    setName = _useState174[1];
   const add = () => {
     if (!name.trim()) return;
     const np = {
@@ -8686,13 +9026,13 @@ function NewPositionForm(_ref35) {
 }
 
 // -- EXPENSE CATEGORY FORM (extracted component) ------------------------------
-function ExpCatForm(_ref36) {
-  let settings = _ref36.settings,
-    setSettings = _ref36.setSettings;
-  const _useState171 = useState(""),
-    _useState172 = _slicedToArray(_useState171, 2),
-    newCat = _useState172[0],
-    setNewCat = _useState172[1];
+function ExpCatForm(_ref38) {
+  let settings = _ref38.settings,
+    setSettings = _ref38.setSettings;
+  const _useState175 = useState(""),
+    _useState176 = _slicedToArray(_useState175, 2),
+    newCat = _useState176[0],
+    setNewCat = _useState176[1];
   const add = () => {
     if (!newCat.trim()) return;
     const existing = settings.expenseCategories || [];
@@ -8725,22 +9065,22 @@ function ExpCatForm(_ref36) {
 }
 
 // -- SETTINGS TAB -------------------------------------------------------------
-function SettingsTab(_ref37) {
-  let settings = _ref37.settings,
-    setSettings = _ref37.setSettings,
-    menu = _ref37.menu,
-    setMenu = _ref37.setMenu,
-    positions = _ref37.positions,
-    setPositions = _ref37.setPositions;
-  const _useState173 = useState("business"),
-    _useState174 = _slicedToArray(_useState173, 2),
-    section = _useState174[0],
-    setSection = _useState174[1];
-  const _useState175 = useState(""),
-    _useState176 = _slicedToArray(_useState175, 2),
-    newSupplier = _useState176[0],
-    setNewSupplier = _useState176[1];
-  const _useState177 = useState({
+function SettingsTab(_ref39) {
+  let settings = _ref39.settings,
+    setSettings = _ref39.setSettings,
+    menu = _ref39.menu,
+    setMenu = _ref39.setMenu,
+    positions = _ref39.positions,
+    setPositions = _ref39.setPositions;
+  const _useState177 = useState("business"),
+    _useState178 = _slicedToArray(_useState177, 2),
+    section = _useState178[0],
+    setSection = _useState178[1];
+  const _useState179 = useState(""),
+    _useState180 = _slicedToArray(_useState179, 2),
+    newSupplier = _useState180[0],
+    setNewSupplier = _useState180[1];
+  const _useState181 = useState({
       name: "",
       cat: "Beverages",
       price: "",
@@ -8749,37 +9089,37 @@ function SettingsTab(_ref37) {
       comesWith: "",
       customGroups: []
     }),
-    _useState178 = _slicedToArray(_useState177, 2),
-    menuForm = _useState178[0],
-    setMenuForm = _useState178[1];
-  const _useState179 = useState(null),
-    _useState180 = _slicedToArray(_useState179, 2),
-    custItemId = _useState180[0],
-    setCustItemId = _useState180[1]; // which item we're editing customGroups for
-  const _useState181 = useState([]),
     _useState182 = _slicedToArray(_useState181, 2),
-    custGroups = _useState182[0],
-    setCustGroups = _useState182[1]; // working copy of groups
-  const _useState183 = useState(""),
+    menuForm = _useState182[0],
+    setMenuForm = _useState182[1];
+  const _useState183 = useState(null),
     _useState184 = _slicedToArray(_useState183, 2),
-    newGroupLabel = _useState184[0],
-    setNewGroupLabel = _useState184[1];
-  const _useState185 = useState(true),
+    custItemId = _useState184[0],
+    setCustItemId = _useState184[1]; // which item we're editing customGroups for
+  const _useState185 = useState([]),
     _useState186 = _slicedToArray(_useState185, 2),
-    newGroupReq = _useState186[0],
-    setNewGroupReq = _useState186[1];
+    custGroups = _useState186[0],
+    setCustGroups = _useState186[1]; // working copy of groups
   const _useState187 = useState(""),
     _useState188 = _slicedToArray(_useState187, 2),
-    newOptName = _useState188[0],
-    setNewOptName = _useState188[1];
-  const _useState189 = useState("0"),
+    newGroupLabel = _useState188[0],
+    setNewGroupLabel = _useState188[1];
+  const _useState189 = useState(true),
     _useState190 = _slicedToArray(_useState189, 2),
-    newOptPrice = _useState190[0],
-    setNewOptPrice = _useState190[1];
-  const _useState191 = useState(null),
+    newGroupReq = _useState190[0],
+    setNewGroupReq = _useState190[1];
+  const _useState191 = useState(""),
     _useState192 = _slicedToArray(_useState191, 2),
-    addingOptFor = _useState192[0],
-    setAddingOptFor = _useState192[1]; // groupId
+    newOptName = _useState192[0],
+    setNewOptName = _useState192[1];
+  const _useState193 = useState("0"),
+    _useState194 = _slicedToArray(_useState193, 2),
+    newOptPrice = _useState194[0],
+    setNewOptPrice = _useState194[1];
+  const _useState195 = useState(null),
+    _useState196 = _slicedToArray(_useState195, 2),
+    addingOptFor = _useState196[0],
+    setAddingOptFor = _useState196[1]; // groupId
 
   const MENU_CATS = ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"];
   const addMenuItem = () => {
@@ -8901,10 +9241,10 @@ function SettingsTab(_ref37) {
       gridTemplateColumns: "1fr 1fr",
       gap: 12
     }
-  }, [["Business Name", "name"], ["Address", "address"], ["Phone", "phone"], ["Email", "email"], ["GST Number", "gstNumber"], ["PST Number", "pstNumber"], ["Established", "established"]].map(_ref38 => {
-    let _ref39 = _slicedToArray(_ref38, 2),
-      label = _ref39[0],
-      key = _ref39[1];
+  }, [["Business Name", "name"], ["Address", "address"], ["Phone", "phone"], ["Email", "email"], ["GST Number", "gstNumber"], ["PST Number", "pstNumber"], ["Established", "established"]].map(_ref40 => {
+    let _ref41 = _slicedToArray(_ref40, 2),
+      label = _ref41[0],
+      key = _ref41[1];
     return /*#__PURE__*/React.createElement("div", {
       key: key
     }, /*#__PURE__*/React.createElement("label", {
@@ -9667,78 +10007,78 @@ const TABS = [{
   label: "Settings"
 }];
 function App() {
-  const _useState193 = useState("pos"),
-    _useState194 = _slicedToArray(_useState193, 2),
-    tab = _useState194[0],
-    setTab = _useState194[1];
-  const _usePersistedState5 = usePersistedState("tog-settings", DEFAULT_SETTINGS),
-    _usePersistedState6 = _slicedToArray(_usePersistedState5, 3),
-    settings = _usePersistedState6[0],
-    setSettings = _usePersistedState6[1],
-    sLoaded = _usePersistedState6[2];
-  const _usePersistedState7 = usePersistedState("tog-menu", MENU_INIT),
+  const _useState197 = useState("pos"),
+    _useState198 = _slicedToArray(_useState197, 2),
+    tab = _useState198[0],
+    setTab = _useState198[1];
+  const _usePersistedState7 = usePersistedState("tog-settings", DEFAULT_SETTINGS),
     _usePersistedState8 = _slicedToArray(_usePersistedState7, 3),
-    menu = _usePersistedState8[0],
-    setMenu = _usePersistedState8[1],
-    mLoaded = _usePersistedState8[2];
-  const _usePersistedState9 = useSharedState("tog-sales", []),
+    settings = _usePersistedState8[0],
+    setSettings = _usePersistedState8[1],
+    sLoaded = _usePersistedState8[2];
+  const _usePersistedState9 = usePersistedState("tog-menu", MENU_INIT),
     _usePersistedState0 = _slicedToArray(_usePersistedState9, 3),
-    sales = _usePersistedState0[0],
-    setSales = _usePersistedState0[1],
-    salLoaded = _usePersistedState0[2];
-  const _usePersistedState1 = usePersistedState("tog-expenses", EXPENSES_INIT),
+    menu = _usePersistedState0[0],
+    setMenu = _usePersistedState0[1],
+    mLoaded = _usePersistedState0[2];
+  const _usePersistedState1 = useSharedState("tog-sales", []),
     _usePersistedState10 = _slicedToArray(_usePersistedState1, 3),
-    expenses = _usePersistedState10[0],
-    setExpenses = _usePersistedState10[1],
-    expLoaded = _usePersistedState10[2];
-  const _usePersistedState11 = usePersistedState("tog-accounts", ACCOUNTS_INIT),
+    sales = _usePersistedState10[0],
+    setSales = _usePersistedState10[1],
+    salLoaded = _usePersistedState10[2];
+  const _usePersistedState11 = usePersistedState("tog-expenses", EXPENSES_INIT),
     _usePersistedState12 = _slicedToArray(_usePersistedState11, 3),
-    accounts = _usePersistedState12[0],
-    setAccounts = _usePersistedState12[1],
-    accLoaded = _usePersistedState12[2];
-  const _usePersistedState13 = usePersistedState("tog-inventory", INVENTORY_INIT),
+    expenses = _usePersistedState12[0],
+    setExpenses = _usePersistedState12[1],
+    expLoaded = _usePersistedState12[2];
+  const _usePersistedState13 = usePersistedState("tog-accounts", ACCOUNTS_INIT),
     _usePersistedState14 = _slicedToArray(_usePersistedState13, 3),
-    inventory = _usePersistedState14[0],
-    setInventory = _usePersistedState14[1],
-    invLoaded = _usePersistedState14[2];
-  const _usePersistedState15 = usePersistedState("tog-recipes", RECIPES_INIT),
+    accounts = _usePersistedState14[0],
+    setAccounts = _usePersistedState14[1],
+    accLoaded = _usePersistedState14[2];
+  const _usePersistedState15 = usePersistedState("tog-inventory", INVENTORY_INIT),
     _usePersistedState16 = _slicedToArray(_usePersistedState15, 3),
-    recipes = _usePersistedState16[0],
-    setRecipes = _usePersistedState16[1],
-    recLoaded = _usePersistedState16[2];
-  const _usePersistedState17 = usePersistedState("tog-refunds", []),
+    inventory = _usePersistedState16[0],
+    setInventory = _usePersistedState16[1],
+    invLoaded = _usePersistedState16[2];
+  const _usePersistedState17 = usePersistedState("tog-recipes", RECIPES_INIT),
     _usePersistedState18 = _slicedToArray(_usePersistedState17, 3),
-    refunds = _usePersistedState18[0],
-    setRefunds = _usePersistedState18[1],
-    refLoaded = _usePersistedState18[2];
-  const _usePersistedState19 = usePersistedState("tog-catering", CATERING_INIT),
+    recipes = _usePersistedState18[0],
+    setRecipes = _usePersistedState18[1],
+    recLoaded = _usePersistedState18[2];
+  const _usePersistedState19 = usePersistedState("tog-refunds", []),
     _usePersistedState20 = _slicedToArray(_usePersistedState19, 3),
-    cateringEvents = _usePersistedState20[0],
-    setCateringEvents = _usePersistedState20[1],
-    catLoaded = _usePersistedState20[2];
-  const _usePersistedState21 = usePersistedState("tog-staff", STAFF_INIT),
+    refunds = _usePersistedState20[0],
+    setRefunds = _usePersistedState20[1],
+    refLoaded = _usePersistedState20[2];
+  const _usePersistedState21 = usePersistedState("tog-catering", CATERING_INIT),
     _usePersistedState22 = _slicedToArray(_usePersistedState21, 3),
-    staff = _usePersistedState22[0],
-    setStaff = _usePersistedState22[1],
-    staffLoaded = _usePersistedState22[2];
-  const _usePersistedState23 = usePersistedState("tog-positions", POSITIONS_INIT),
+    cateringEvents = _usePersistedState22[0],
+    setCateringEvents = _usePersistedState22[1],
+    catLoaded = _usePersistedState22[2];
+  const _usePersistedState23 = usePersistedState("tog-staff", STAFF_INIT),
     _usePersistedState24 = _slicedToArray(_usePersistedState23, 3),
-    positions = _usePersistedState24[0],
-    setPositions = _usePersistedState24[1],
-    posLoaded = _usePersistedState24[2];
+    staff = _usePersistedState24[0],
+    setStaff = _usePersistedState24[1],
+    staffLoaded = _usePersistedState24[2];
+  const _usePersistedState25 = usePersistedState("tog-positions", POSITIONS_INIT),
+    _usePersistedState26 = _slicedToArray(_usePersistedState25, 3),
+    positions = _usePersistedState26[0],
+    setPositions = _usePersistedState26[1],
+    posLoaded = _usePersistedState26[2];
   const _useSharedState = useSharedState("tog-kitchen-queue", []),
     _useSharedState2 = _slicedToArray(_useSharedState, 2),
     kitchenOrders = _useSharedState2[0],
     setKitchenOrders = _useSharedState2[1];
   // Tab session hooks MUST be before early return (Rules of Hooks)
-  const _useState195 = useState({}),
-    _useState196 = _slicedToArray(_useState195, 2),
-    tabSessions = _useState196[0],
-    setTabSessions = _useState196[1];
-  const _useState197 = useState(null),
-    _useState198 = _slicedToArray(_useState197, 2),
-    pendingTab = _useState198[0],
-    setPendingTab = _useState198[1];
+  const _useState199 = useState({}),
+    _useState200 = _slicedToArray(_useState199, 2),
+    tabSessions = _useState200[0],
+    setTabSessions = _useState200[1];
+  const _useState201 = useState(null),
+    _useState202 = _slicedToArray(_useState201, 2),
+    pendingTab = _useState202[0],
+    setPendingTab = _useState202[1];
   const allLoaded = sLoaded && mLoaded && salLoaded && expLoaded && accLoaded && invLoaded && recLoaded && refLoaded && staffLoaded && posLoaded;
   if (!allLoaded) return /*#__PURE__*/React.createElement(LoadingScreen, null);
   const TAB_PERM_KEY = {
@@ -10038,7 +10378,8 @@ function App() {
     menu: menu,
     recipes: recipes,
     inventory: inventory,
-    cateringEvents: cateringEvents
+    cateringEvents: cateringEvents,
+    countLog: countLog
   }), tab === "settings" && /*#__PURE__*/React.createElement(SettingsTab, {
     settings: settings,
     setSettings: setSettings,
