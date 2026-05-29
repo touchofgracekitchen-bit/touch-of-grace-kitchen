@@ -2899,7 +2899,9 @@ function InventoryTab(_ref10) {
     menu = _ref10.menu,
     recipes = _ref10.recipes,
     setRecipes = _ref10.setRecipes,
-    canSeeRecipes = _ref10.canSeeRecipes;
+    canSeeRecipes = _ref10.canSeeRecipes,
+    countLog = _ref10.countLog,
+    setCountLog = _ref10.setCountLog;
   const _useState45 = useState("stock"),
     _useState46 = _slicedToArray(_useState45, 2),
     section = _useState46[0],
@@ -2951,16 +2953,12 @@ function InventoryTab(_ref10) {
     _useState66 = _slicedToArray(_useState65, 2),
     countLocked = _useState66[0],
     setCountLocked = _useState66[1];
-  const _usePersistedState = usePersistedState("tog-count-log", []),
+  // countLog moved to App level
+  const _usePersistedState = usePersistedState("tog-receive-log", []),
     _usePersistedState2 = _slicedToArray(_usePersistedState, 3),
-    countLog = _usePersistedState2[0],
-    setCountLog = _usePersistedState2[1],
-    logLoaded = _usePersistedState2[2];
-  const _usePersistedState3 = usePersistedState("tog-receive-log", []),
-    _usePersistedState4 = _slicedToArray(_usePersistedState3, 3),
-    receiveLog = _usePersistedState4[0],
-    setReceiveLog = _usePersistedState4[1],
-    rcvLoaded = _usePersistedState4[2];
+    receiveLog = _usePersistedState2[0],
+    setReceiveLog = _usePersistedState2[1],
+    rcvLoaded = _usePersistedState2[2];
   const _useState67 = useState(false),
     _useState68 = _slicedToArray(_useState67, 2),
     receiveMode = _useState68[0],
@@ -7277,11 +7275,11 @@ function EODTab(_ref26) {
     staff = _ref26.staff,
     positions = _ref26.positions,
     cateringEvents = _ref26.cateringEvents;
-  const _usePersistedState5 = usePersistedState("tog-eod", []),
-    _usePersistedState6 = _slicedToArray(_usePersistedState5, 3),
-    eodRecords = _usePersistedState6[0],
-    setEodRecords = _usePersistedState6[1],
-    loaded = _usePersistedState6[2];
+  const _usePersistedState3 = usePersistedState("tog-eod", []),
+    _usePersistedState4 = _slicedToArray(_usePersistedState3, 3),
+    eodRecords = _usePersistedState4[0],
+    setEodRecords = _usePersistedState4[1],
+    loaded = _usePersistedState4[2];
   const _useState143 = useState(today()),
     _useState144 = _slicedToArray(_useState143, 2),
     selDate = _useState144[0],
@@ -10011,46 +10009,51 @@ function App() {
     _useState198 = _slicedToArray(_useState197, 2),
     tab = _useState198[0],
     setTab = _useState198[1];
-  const _usePersistedState7 = usePersistedState("tog-settings", DEFAULT_SETTINGS),
+  const _usePersistedState5 = usePersistedState("tog-settings", DEFAULT_SETTINGS),
+    _usePersistedState6 = _slicedToArray(_usePersistedState5, 3),
+    settings = _usePersistedState6[0],
+    setSettings = _usePersistedState6[1],
+    sLoaded = _usePersistedState6[2];
+  const _usePersistedState7 = usePersistedState("tog-menu", MENU_INIT),
     _usePersistedState8 = _slicedToArray(_usePersistedState7, 3),
-    settings = _usePersistedState8[0],
-    setSettings = _usePersistedState8[1],
-    sLoaded = _usePersistedState8[2];
-  const _usePersistedState9 = usePersistedState("tog-menu", MENU_INIT),
+    menu = _usePersistedState8[0],
+    setMenu = _usePersistedState8[1],
+    mLoaded = _usePersistedState8[2];
+  const _usePersistedState9 = useSharedState("tog-sales", []),
     _usePersistedState0 = _slicedToArray(_usePersistedState9, 3),
-    menu = _usePersistedState0[0],
-    setMenu = _usePersistedState0[1],
-    mLoaded = _usePersistedState0[2];
-  const _usePersistedState1 = useSharedState("tog-sales", []),
+    sales = _usePersistedState0[0],
+    setSales = _usePersistedState0[1],
+    salLoaded = _usePersistedState0[2];
+  const _usePersistedState1 = usePersistedState("tog-expenses", EXPENSES_INIT),
     _usePersistedState10 = _slicedToArray(_usePersistedState1, 3),
-    sales = _usePersistedState10[0],
-    setSales = _usePersistedState10[1],
-    salLoaded = _usePersistedState10[2];
-  const _usePersistedState11 = usePersistedState("tog-expenses", EXPENSES_INIT),
+    expenses = _usePersistedState10[0],
+    setExpenses = _usePersistedState10[1],
+    expLoaded = _usePersistedState10[2];
+  const _usePersistedState11 = usePersistedState("tog-accounts", ACCOUNTS_INIT),
     _usePersistedState12 = _slicedToArray(_usePersistedState11, 3),
-    expenses = _usePersistedState12[0],
-    setExpenses = _usePersistedState12[1],
-    expLoaded = _usePersistedState12[2];
-  const _usePersistedState13 = usePersistedState("tog-accounts", ACCOUNTS_INIT),
+    accounts = _usePersistedState12[0],
+    setAccounts = _usePersistedState12[1],
+    accLoaded = _usePersistedState12[2];
+  const _usePersistedState13 = usePersistedState("tog-inventory", INVENTORY_INIT),
     _usePersistedState14 = _slicedToArray(_usePersistedState13, 3),
-    accounts = _usePersistedState14[0],
-    setAccounts = _usePersistedState14[1],
-    accLoaded = _usePersistedState14[2];
-  const _usePersistedState15 = usePersistedState("tog-inventory", INVENTORY_INIT),
+    inventory = _usePersistedState14[0],
+    setInventory = _usePersistedState14[1],
+    invLoaded = _usePersistedState14[2];
+  const _usePersistedState15 = usePersistedState("tog-recipes", RECIPES_INIT),
     _usePersistedState16 = _slicedToArray(_usePersistedState15, 3),
-    inventory = _usePersistedState16[0],
-    setInventory = _usePersistedState16[1],
-    invLoaded = _usePersistedState16[2];
-  const _usePersistedState17 = usePersistedState("tog-recipes", RECIPES_INIT),
+    recipes = _usePersistedState16[0],
+    setRecipes = _usePersistedState16[1],
+    recLoaded = _usePersistedState16[2];
+  const _usePersistedState17 = usePersistedState("tog-refunds", []),
     _usePersistedState18 = _slicedToArray(_usePersistedState17, 3),
-    recipes = _usePersistedState18[0],
-    setRecipes = _usePersistedState18[1],
-    recLoaded = _usePersistedState18[2];
-  const _usePersistedState19 = usePersistedState("tog-refunds", []),
+    refunds = _usePersistedState18[0],
+    setRefunds = _usePersistedState18[1],
+    refLoaded = _usePersistedState18[2];
+  const _usePersistedState19 = usePersistedState("tog-count-log", []),
     _usePersistedState20 = _slicedToArray(_usePersistedState19, 3),
-    refunds = _usePersistedState20[0],
-    setRefunds = _usePersistedState20[1],
-    refLoaded = _usePersistedState20[2];
+    countLog = _usePersistedState20[0],
+    setCountLog = _usePersistedState20[1],
+    logLoaded = _usePersistedState20[2];
   const _usePersistedState21 = usePersistedState("tog-catering", CATERING_INIT),
     _usePersistedState22 = _slicedToArray(_usePersistedState21, 3),
     cateringEvents = _usePersistedState22[0],
@@ -10339,7 +10342,9 @@ function App() {
     menu: menu,
     recipes: recipes,
     setRecipes: setRecipes,
-    canSeeRecipes: canSeeRecipes
+    canSeeRecipes: canSeeRecipes,
+    countLog: countLog,
+    setCountLog: setCountLog
   }), tab === "expenses" && /*#__PURE__*/React.createElement(ExpensesTab, {
     expenses: expenses,
     setExpenses: setExpenses,
