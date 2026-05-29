@@ -42,15 +42,41 @@ const _React = React,
   useEffect = _React.useEffect;
 function usePersistedState(key, def) {
   var lsKey = 'tog_' + key;
-  var _useState = React.useState(function () {
+  var _s = React.useState(function () {
     try {
       var s = localStorage.getItem(lsKey);
       if (s !== null) return JSON.parse(s);
     } catch (e) {}
     return def;
   });
-  var val = _useState[0],
-    setVal = _useState[1];
+  var val = _s[0],
+    setVal = _s[1];
+  var _l = React.useState(false);
+  var setLoaded = _l[1];
+  React.useEffect(function () {
+    dbLoad(key).then(function (remote) {
+      if (remote !== null && remote !== undefined) {
+        setVal(remote);
+        try {
+          localStorage.setItem(lsKey, JSON.stringify(remote));
+        } catch (e) {}
+      }
+      setLoaded(true);
+    });
+    var t = setInterval(function () {
+      dbLoad(key).then(function (remote) {
+        if (remote !== null && remote !== undefined) {
+          setVal(remote);
+          try {
+            localStorage.setItem(lsKey, JSON.stringify(remote));
+          } catch (e) {}
+        }
+      });
+    }, 30000);
+    return function () {
+      clearInterval(t);
+    };
+  }, [key]);
   var save = function (fn) {
     setVal(function (prev) {
       var next = typeof fn === 'function' ? fn(prev) : fn;
@@ -65,15 +91,15 @@ function usePersistedState(key, def) {
 }
 function useSharedState(key, def) {
   var lsKey = 'tog_shared_' + key;
-  var _useState2 = React.useState(function () {
+  var _s = React.useState(function () {
     try {
       var s = localStorage.getItem(lsKey);
       if (s !== null) return JSON.parse(s);
     } catch (e) {}
     return def;
   });
-  var val = _useState2[0],
-    setVal = _useState2[1];
+  var val = _s[0],
+    setVal = _s[1];
   React.useEffect(function () {
     dbLoad(key).then(function (remote) {
       if (remote !== null && remote !== undefined) {
@@ -1531,14 +1557,14 @@ function ManagerPINModal(_ref8) {
     action = _ref8.action,
     onSuccess = _ref8.onSuccess,
     onCancel = _ref8.onCancel;
+  const _useState = useState(""),
+    _useState2 = _slicedToArray(_useState, 2),
+    pin = _useState2[0],
+    setPin = _useState2[1];
   const _useState3 = useState(""),
     _useState4 = _slicedToArray(_useState3, 2),
-    pin = _useState4[0],
-    setPin = _useState4[1];
-  const _useState5 = useState(""),
-    _useState6 = _slicedToArray(_useState5, 2),
-    error = _useState6[0],
-    setError = _useState6[1];
+    error = _useState4[0],
+    setError = _useState4[1];
 
   // Find staff members whose position has this permission
   const authorized = (staff || []).filter(s => {
@@ -1651,14 +1677,14 @@ function CustomizeModal(_ref9) {
     });
     return s;
   };
-  const _useState7 = useState(initSelections),
+  const _useState5 = useState(initSelections),
+    _useState6 = _slicedToArray(_useState5, 2),
+    selections = _useState6[0],
+    setSelections = _useState6[1];
+  const _useState7 = useState(""),
     _useState8 = _slicedToArray(_useState7, 2),
-    selections = _useState8[0],
-    setSelections = _useState8[1];
-  const _useState9 = useState(""),
-    _useState0 = _slicedToArray(_useState9, 2),
-    request = _useState0[0],
-    setRequest = _useState0[1];
+    request = _useState8[0],
+    setRequest = _useState8[1];
   const extraPrice = groups.reduce((sum, g) => {
     const chosen = g.options.find(o => o.name === selections[g.id]);
     return sum + (chosen ? chosen.price : 0);
@@ -1806,77 +1832,77 @@ function POSTab(_ref0) {
     setKitchenOrders = _ref0.setKitchenOrders,
     staff = _ref0.staff,
     positions = _ref0.positions;
-  const _useState1 = useState([]),
+  const _useState9 = useState([]),
+    _useState0 = _slicedToArray(_useState9, 2),
+    order = _useState0[0],
+    setOrder = _useState0[1];
+  const _useState1 = useState(""),
     _useState10 = _slicedToArray(_useState1, 2),
-    order = _useState10[0],
-    setOrder = _useState10[1];
-  const _useState11 = useState(""),
+    note = _useState10[0],
+    setNote = _useState10[1];
+  const _useState11 = useState("Dine-in"),
     _useState12 = _slicedToArray(_useState11, 2),
-    note = _useState12[0],
-    setNote = _useState12[1];
-  const _useState13 = useState("Dine-in"),
+    orderType = _useState12[0],
+    setOrderType = _useState12[1];
+  const _useState13 = useState("Card Machine"),
     _useState14 = _slicedToArray(_useState13, 2),
-    orderType = _useState14[0],
-    setOrderType = _useState14[1];
-  const _useState15 = useState("Card Machine"),
+    payMethod = _useState14[0],
+    setPayMethod = _useState14[1];
+  const _useState15 = useState(""),
     _useState16 = _slicedToArray(_useState15, 2),
-    payMethod = _useState16[0],
-    setPayMethod = _useState16[1];
+    cashGiven = _useState16[0],
+    setCashGiven = _useState16[1];
   const _useState17 = useState(""),
     _useState18 = _slicedToArray(_useState17, 2),
-    cashGiven = _useState18[0],
-    setCashGiven = _useState18[1];
-  const _useState19 = useState(""),
+    accountId = _useState18[0],
+    setAccountId = _useState18[1];
+  const _useState19 = useState("All"),
     _useState20 = _slicedToArray(_useState19, 2),
-    accountId = _useState20[0],
-    setAccountId = _useState20[1];
-  const _useState21 = useState("All"),
+    filterCat = _useState20[0],
+    setFilterCat = _useState20[1];
+  const _useState21 = useState(null),
     _useState22 = _slicedToArray(_useState21, 2),
-    filterCat = _useState22[0],
-    setFilterCat = _useState22[1];
+    customItem = _useState22[0],
+    setCustomItem = _useState22[1];
   const _useState23 = useState(null),
     _useState24 = _slicedToArray(_useState23, 2),
-    customItem = _useState24[0],
-    setCustomItem = _useState24[1];
-  const _useState25 = useState(null),
+    receipt = _useState24[0],
+    setReceipt = _useState24[1];
+  const _useState25 = useState(() => 100 + Math.floor(Math.random() * 900)),
     _useState26 = _slicedToArray(_useState25, 2),
-    receipt = _useState26[0],
-    setReceipt = _useState26[1];
-  const _useState27 = useState(() => 100 + Math.floor(Math.random() * 900)),
-    _useState28 = _slicedToArray(_useState27, 2),
-    orderNum = _useState28[0],
-    setOrderNum = _useState28[1];
+    orderNum = _useState26[0],
+    setOrderNum = _useState26[1];
   // Discount state
-  const _useState29 = useState(false),
+  const _useState27 = useState(false),
+    _useState28 = _slicedToArray(_useState27, 2),
+    showDiscount = _useState28[0],
+    setShowDiscount = _useState28[1];
+  const _useState29 = useState("percent"),
     _useState30 = _slicedToArray(_useState29, 2),
-    showDiscount = _useState30[0],
-    setShowDiscount = _useState30[1];
-  const _useState31 = useState("percent"),
+    discountType = _useState30[0],
+    setDiscountType = _useState30[1];
+  const _useState31 = useState(""),
     _useState32 = _slicedToArray(_useState31, 2),
-    discountType = _useState32[0],
-    setDiscountType = _useState32[1];
+    discountValue = _useState32[0],
+    setDiscountValue = _useState32[1];
   const _useState33 = useState(""),
     _useState34 = _slicedToArray(_useState33, 2),
-    discountValue = _useState34[0],
-    setDiscountValue = _useState34[1];
-  const _useState35 = useState(""),
-    _useState36 = _slicedToArray(_useState35, 2),
-    discountItemIdx = _useState36[0],
-    setDiscountItemIdx = _useState36[1];
+    discountItemIdx = _useState34[0],
+    setDiscountItemIdx = _useState34[1];
   // Complimentary state
-  const _useState37 = useState(false),
+  const _useState35 = useState(false),
+    _useState36 = _slicedToArray(_useState35, 2),
+    isComp = _useState36[0],
+    setIsComp = _useState36[1];
+  const _useState37 = useState(null),
     _useState38 = _slicedToArray(_useState37, 2),
-    isComp = _useState38[0],
-    setIsComp = _useState38[1];
+    compAuth = _useState38[0],
+    setCompAuth = _useState38[1];
+  // Manager PIN gate: "discount" | "complimentary" | null
   const _useState39 = useState(null),
     _useState40 = _slicedToArray(_useState39, 2),
-    compAuth = _useState40[0],
-    setCompAuth = _useState40[1];
-  // Manager PIN gate: "discount" | "complimentary" | null
-  const _useState41 = useState(null),
-    _useState42 = _slicedToArray(_useState41, 2),
-    pinGate = _useState42[0],
-    setPinGate = _useState42[1];
+    pinGate = _useState40[0],
+    setPinGate = _useState40[1];
   const gst = settings.taxes.gst / 100;
   const pst = settings.taxes.pst / 100;
   const cats = ["All", ...Array.from(new Set(menu.filter(m => m.available).map(m => m.cat)))];
@@ -2620,14 +2646,14 @@ const K_LABELS = {
 function KitchenTab(_ref1) {
   let kitchenOrders = _ref1.kitchenOrders,
     setKitchenOrders = _ref1.setKitchenOrders;
-  const _useState43 = useState("active"),
+  const _useState41 = useState("active"),
+    _useState42 = _slicedToArray(_useState41, 2),
+    filter = _useState42[0],
+    setFilter = _useState42[1];
+  const _useState43 = useState(Date.now()),
     _useState44 = _slicedToArray(_useState43, 2),
-    filter = _useState44[0],
-    setFilter = _useState44[1];
-  const _useState45 = useState(Date.now()),
-    _useState46 = _slicedToArray(_useState45, 2),
-    lastRefresh = _useState46[0],
-    setLastRefresh = _useState46[1];
+    lastRefresh = _useState44[0],
+    setLastRefresh = _useState44[1];
   useEffect(() => {
     const t = setInterval(() => setLastRefresh(Date.now()), 4000);
     return () => clearInterval(t);
@@ -2865,71 +2891,71 @@ function InventoryTab(_ref10) {
     recipes = _ref10.recipes,
     setRecipes = _ref10.setRecipes,
     canSeeRecipes = _ref10.canSeeRecipes;
-  const _useState47 = useState("stock"),
+  const _useState45 = useState("stock"),
+    _useState46 = _slicedToArray(_useState45, 2),
+    section = _useState46[0],
+    setSection = _useState46[1];
+  const _useState47 = useState(""),
     _useState48 = _slicedToArray(_useState47, 2),
-    section = _useState48[0],
-    setSection = _useState48[1];
-  const _useState49 = useState(""),
+    search = _useState48[0],
+    setSearch = _useState48[1];
+  const _useState49 = useState(false),
     _useState50 = _slicedToArray(_useState49, 2),
-    search = _useState50[0],
-    setSearch = _useState50[1];
-  const _useState51 = useState(false),
+    addMode = _useState50[0],
+    setAddMode = _useState50[1];
+  const _useState51 = useState(null),
     _useState52 = _slicedToArray(_useState51, 2),
-    addMode = _useState52[0],
-    setAddMode = _useState52[1];
-  const _useState53 = useState(null),
-    _useState54 = _slicedToArray(_useState53, 2),
-    editId = _useState54[0],
-    setEditId = _useState54[1];
-  const _useState55 = useState({
+    editId = _useState52[0],
+    setEditId = _useState52[1];
+  const _useState53 = useState({
       name: "",
       cat: "Proteins",
       unit: "kg",
       stock: "",
       minStock: ""
     }),
+    _useState54 = _slicedToArray(_useState53, 2),
+    form = _useState54[0],
+    setForm = _useState54[1];
+  const _useState55 = useState([]),
     _useState56 = _slicedToArray(_useState55, 2),
-    form = _useState56[0],
-    setForm = _useState56[1];
-  const _useState57 = useState([]),
+    priceRows = _useState56[0],
+    setPriceRows = _useState56[1];
+  const _useState57 = useState("__pick__"),
     _useState58 = _slicedToArray(_useState57, 2),
-    priceRows = _useState58[0],
-    setPriceRows = _useState58[1];
-  const _useState59 = useState("__pick__"),
+    pendingSup = _useState58[0],
+    setPendingSup = _useState58[1];
+  const _useState59 = useState(""),
     _useState60 = _slicedToArray(_useState59, 2),
-    pendingSup = _useState60[0],
-    setPendingSup = _useState60[1];
+    pendingSupN = _useState60[0],
+    setPendingSupN = _useState60[1];
   const _useState61 = useState(""),
     _useState62 = _slicedToArray(_useState61, 2),
-    pendingSupN = _useState62[0],
-    setPendingSupN = _useState62[1];
-  const _useState63 = useState(""),
-    _useState64 = _slicedToArray(_useState63, 2),
-    pendingPrice = _useState64[0],
-    setPendingPrice = _useState64[1];
+    pendingPrice = _useState62[0],
+    setPendingPrice = _useState62[1];
   // stock count
-  const _useState65 = useState({}),
+  const _useState63 = useState({}),
+    _useState64 = _slicedToArray(_useState63, 2),
+    physCounts = _useState64[0],
+    setPhysCounts = _useState64[1];
+  const _useState65 = useState(false),
     _useState66 = _slicedToArray(_useState65, 2),
-    physCounts = _useState66[0],
-    setPhysCounts = _useState66[1];
-  const _useState67 = useState(false),
-    _useState68 = _slicedToArray(_useState67, 2),
-    countLocked = _useState68[0],
-    setCountLocked = _useState68[1];
+    countLocked = _useState66[0],
+    setCountLocked = _useState66[1];
   const _usePersistedState = usePersistedState("tog-count-log", []),
     _usePersistedState2 = _slicedToArray(_usePersistedState, 3),
     countLog = _usePersistedState2[0],
     setCountLog = _usePersistedState2[1],
     logLoaded = _usePersistedState2[2];
   // recipe editing
-  const _useState69 = useState(null),
+  const _useState67 = useState(null),
+    _useState68 = _slicedToArray(_useState67, 2),
+    editRecipeId = _useState68[0],
+    setEditRecipeId = _useState68[1];
+  const _useState69 = useState([]),
     _useState70 = _slicedToArray(_useState69, 2),
-    editRecipeId = _useState70[0],
-    setEditRecipeId = _useState70[1];
-  const _useState71 = useState([]),
-    _useState72 = _slicedToArray(_useState71, 2),
-    recipeLines = _useState72[0],
-    setRecipeLines = _useState72[1];
+    recipeLines = _useState70[0],
+    setRecipeLines = _useState70[1];
   const CATS = ["Proteins", "Dry Goods", "Produce", "Pantry", "Spices", "Sides", "Beverages", "Packaging"];
   const allSuppliers = settings.suppliers || [];
   const lowStock = inventory.filter(i => i.stock <= i.minStock);
@@ -3986,24 +4012,24 @@ function ExpensesTab(_ref15) {
     const idx = CATS.indexOf(cat);
     return idx >= 0 ? CAT_PALETTE[idx % CAT_PALETTE.length] : C.charcoal;
   };
-  const _useState73 = useState({
+  const _useState71 = useState({
       date: today(),
       cat: CATS[0] || "Other",
       desc: "",
       amount: "",
       supplier: ""
     }),
+    _useState72 = _slicedToArray(_useState71, 2),
+    form = _useState72[0],
+    setForm = _useState72[1];
+  const _useState73 = useState(false),
     _useState74 = _slicedToArray(_useState73, 2),
-    form = _useState74[0],
-    setForm = _useState74[1];
-  const _useState75 = useState(false),
+    addMode = _useState74[0],
+    setAddMode = _useState74[1];
+  const _useState75 = useState(today().slice(0, 7)),
     _useState76 = _slicedToArray(_useState75, 2),
-    addMode = _useState76[0],
-    setAddMode = _useState76[1];
-  const _useState77 = useState(today().slice(0, 7)),
-    _useState78 = _slicedToArray(_useState77, 2),
-    filterMonth = _useState78[0],
-    setFilterMonth = _useState78[1];
+    filterMonth = _useState76[0],
+    setFilterMonth = _useState76[1];
   const filtered = expenses.filter(e => e.date.startsWith(filterMonth));
   const total = filtered.reduce((s, e) => s + e.amount, 0);
   const CAT_COLORS = {};
@@ -4273,34 +4299,34 @@ function StaffTab(_ref17) {
     setStaff = _ref17.setStaff,
     positions = _ref17.positions;
   const loaded = true; // staff is passed from App (already loaded)
-  const _useState79 = useState(false),
+  const _useState77 = useState(false),
+    _useState78 = _slicedToArray(_useState77, 2),
+    addMode = _useState78[0],
+    setAddMode = _useState78[1];
+  const _useState79 = useState(null),
     _useState80 = _slicedToArray(_useState79, 2),
-    addMode = _useState80[0],
-    setAddMode = _useState80[1];
-  const _useState81 = useState(null),
+    editId = _useState80[0],
+    setEditId = _useState80[1];
+  const _useState81 = useState(false),
     _useState82 = _slicedToArray(_useState81, 2),
-    editId = _useState82[0],
-    setEditId = _useState82[1];
-  const _useState83 = useState(false),
+    showPin = _useState82[0],
+    setShowPin = _useState82[1];
+  const _useState83 = useState(null),
     _useState84 = _slicedToArray(_useState83, 2),
-    showPin = _useState84[0],
-    setShowPin = _useState84[1];
-  const _useState85 = useState(null),
+    pinModal = _useState84[0],
+    setPinModal = _useState84[1];
+  const _useState85 = useState(""),
     _useState86 = _slicedToArray(_useState85, 2),
-    pinModal = _useState86[0],
-    setPinModal = _useState86[1];
+    pinInput = _useState86[0],
+    setPinInput = _useState86[1];
   const _useState87 = useState(""),
     _useState88 = _slicedToArray(_useState87, 2),
-    pinInput = _useState88[0],
-    setPinInput = _useState88[1];
-  const _useState89 = useState(""),
+    pinError = _useState88[0],
+    setPinError = _useState88[1];
+  const _useState89 = useState("bi-weekly"),
     _useState90 = _slicedToArray(_useState89, 2),
-    pinError = _useState90[0],
-    setPinError = _useState90[1];
-  const _useState91 = useState("bi-weekly"),
-    _useState92 = _slicedToArray(_useState91, 2),
-    payPeriod = _useState92[0],
-    setPayPeriod = _useState92[1];
+    payPeriod = _useState90[0],
+    setPayPeriod = _useState90[1];
   const blankForm = {
     name: "",
     role: "",
@@ -4311,10 +4337,10 @@ function StaffTab(_ref17) {
     startDate: today(),
     positionId: 3
   };
-  const _useState93 = useState(blankForm),
-    _useState94 = _slicedToArray(_useState93, 2),
-    form = _useState94[0],
-    setForm = _useState94[1];
+  const _useState91 = useState(blankForm),
+    _useState92 = _slicedToArray(_useState91, 2),
+    form = _useState92[0],
+    setForm = _useState92[1];
   const mult = payPeriod === "weekly" ? 1 : payPeriod === "bi-weekly" ? 2 : 4;
   const payrollTotal = staff.filter(s => s.type !== "Owner").reduce((sum, s) => sum + s.hourlyRate * s.hoursPerWeek * mult, 0);
   const getPos = s => (positions || POSITIONS_INIT).find(p => p.id === s.positionId) || {
@@ -4989,26 +5015,26 @@ function AccountsTab(_ref18) {
   let accounts = _ref18.accounts,
     setAccounts = _ref18.setAccounts,
     sales = _ref18.sales;
-  const _useState95 = useState(null),
+  const _useState93 = useState(null),
+    _useState94 = _slicedToArray(_useState93, 2),
+    selected = _useState94[0],
+    setSelected = _useState94[1];
+  const _useState95 = useState(false),
     _useState96 = _slicedToArray(_useState95, 2),
-    selected = _useState96[0],
-    setSelected = _useState96[1];
-  const _useState97 = useState(false),
+    addMode = _useState96[0],
+    setAddMode = _useState96[1];
+  const _useState97 = useState("orders"),
     _useState98 = _slicedToArray(_useState97, 2),
-    addMode = _useState98[0],
-    setAddMode = _useState98[1];
-  const _useState99 = useState("orders"),
-    _useState100 = _slicedToArray(_useState99, 2),
-    view = _useState100[0],
-    setView = _useState100[1];
-  const _useState101 = useState({
+    view = _useState98[0],
+    setView = _useState98[1];
+  const _useState99 = useState({
       from: today().slice(0, 7) + "-01",
       to: today()
     }),
-    _useState102 = _slicedToArray(_useState101, 2),
-    invoiceRange = _useState102[0],
-    setInvoiceRange = _useState102[1];
-  const _useState103 = useState({
+    _useState100 = _slicedToArray(_useState99, 2),
+    invoiceRange = _useState100[0],
+    setInvoiceRange = _useState100[1];
+  const _useState101 = useState({
       name: "",
       contact: "",
       phone: "",
@@ -5016,25 +5042,25 @@ function AccountsTab(_ref18) {
       billingCycle: "weekly",
       notes: ""
     }),
+    _useState102 = _slicedToArray(_useState101, 2),
+    form = _useState102[0],
+    setForm = _useState102[1];
+  const _useState103 = useState(""),
     _useState104 = _slicedToArray(_useState103, 2),
-    form = _useState104[0],
-    setForm = _useState104[1];
-  const _useState105 = useState(""),
+    pmtAmount = _useState104[0],
+    setPmtAmount = _useState104[1];
+  const _useState105 = useState("Transfer"),
     _useState106 = _slicedToArray(_useState105, 2),
-    pmtAmount = _useState106[0],
-    setPmtAmount = _useState106[1];
-  const _useState107 = useState("Transfer"),
+    pmtMethod = _useState106[0],
+    setPmtMethod = _useState106[1];
+  const _useState107 = useState(""),
     _useState108 = _slicedToArray(_useState107, 2),
-    pmtMethod = _useState108[0],
-    setPmtMethod = _useState108[1];
-  const _useState109 = useState(""),
+    pmtNote = _useState108[0],
+    setPmtNote = _useState108[1];
+  const _useState109 = useState(false),
     _useState110 = _slicedToArray(_useState109, 2),
-    pmtNote = _useState110[0],
-    setPmtNote = _useState110[1];
-  const _useState111 = useState(false),
-    _useState112 = _slicedToArray(_useState111, 2),
-    pmtSaved = _useState112[0],
-    setPmtSaved = _useState112[1];
+    pmtSaved = _useState110[0],
+    setPmtSaved = _useState110[1];
   const onAccountOrders = acc => sales.filter(s => s.accountId === acc.id && s.paymentStatus === "on-account");
   const pendingOrders = acc => onAccountOrders(acc).filter(s => !s.invoiced);
   const totalOwed = acc => pendingOrders(acc).reduce((s, o) => s + o.total, 0);
@@ -5724,19 +5750,19 @@ function CateringTab(_ref19) {
     recipes = _ref19.recipes,
     inventory = _ref19.inventory,
     setInventory = _ref19.setInventory;
-  const _useState113 = useState(null),
+  const _useState111 = useState(null),
+    _useState112 = _slicedToArray(_useState111, 2),
+    selId = _useState112[0],
+    setSelId = _useState112[1];
+  const _useState113 = useState("details"),
     _useState114 = _slicedToArray(_useState113, 2),
-    selId = _useState114[0],
-    setSelId = _useState114[1];
-  const _useState115 = useState("details"),
+    catSec = _useState114[0],
+    setCatSec = _useState114[1];
+  const _useState115 = useState(false),
     _useState116 = _slicedToArray(_useState115, 2),
-    catSec = _useState116[0],
-    setCatSec = _useState116[1];
-  const _useState117 = useState(false),
-    _useState118 = _slicedToArray(_useState117, 2),
-    addMode = _useState118[0],
-    setAddMode = _useState118[1];
-  const _useState119 = useState({
+    addMode = _useState116[0],
+    setAddMode = _useState116[1];
+  const _useState117 = useState({
       eventName: "",
       clientName: "",
       clientPhone: "",
@@ -5752,49 +5778,49 @@ function CateringTab(_ref19) {
       discountType: "none",
       discountValue: 0
     }),
+    _useState118 = _slicedToArray(_useState117, 2),
+    newForm = _useState118[0],
+    setNewForm = _useState118[1];
+  const _useState119 = useState(""),
     _useState120 = _slicedToArray(_useState119, 2),
-    newForm = _useState120[0],
-    setNewForm = _useState120[1];
-  const _useState121 = useState(""),
+    pickMenuId = _useState120[0],
+    setPickMenuId = _useState120[1];
+  const _useState121 = useState("1"),
     _useState122 = _slicedToArray(_useState121, 2),
-    pickMenuId = _useState122[0],
-    setPickMenuId = _useState122[1];
-  const _useState123 = useState("1"),
+    pickQty = _useState122[0],
+    setPickQty = _useState122[1];
+  const _useState123 = useState(""),
     _useState124 = _slicedToArray(_useState123, 2),
-    pickQty = _useState124[0],
-    setPickQty = _useState124[1];
+    pickPrice = _useState124[0],
+    setPickPrice = _useState124[1];
   const _useState125 = useState(""),
     _useState126 = _slicedToArray(_useState125, 2),
-    pickPrice = _useState126[0],
-    setPickPrice = _useState126[1];
-  const _useState127 = useState(""),
+    pickNote = _useState126[0],
+    setPickNote = _useState126[1];
+  const _useState127 = useState(false),
     _useState128 = _slicedToArray(_useState127, 2),
-    pickNote = _useState128[0],
-    setPickNote = _useState128[1];
-  const _useState129 = useState(false),
+    showAddItem = _useState128[0],
+    setShowAddItem = _useState128[1];
+  const _useState129 = useState(""),
     _useState130 = _slicedToArray(_useState129, 2),
-    showAddItem = _useState130[0],
-    setShowAddItem = _useState130[1];
-  const _useState131 = useState(""),
+    pmtAmount = _useState130[0],
+    setPmtAmount = _useState130[1];
+  const _useState131 = useState("Transfer"),
     _useState132 = _slicedToArray(_useState131, 2),
-    pmtAmount = _useState132[0],
-    setPmtAmount = _useState132[1];
-  const _useState133 = useState("Transfer"),
+    pmtMethod = _useState132[0],
+    setPmtMethod = _useState132[1];
+  const _useState133 = useState(""),
     _useState134 = _slicedToArray(_useState133, 2),
-    pmtMethod = _useState134[0],
-    setPmtMethod = _useState134[1];
-  const _useState135 = useState(""),
+    pmtNote = _useState134[0],
+    setPmtNote = _useState134[1];
+  const _useState135 = useState(false),
     _useState136 = _slicedToArray(_useState135, 2),
-    pmtNote = _useState136[0],
-    setPmtNote = _useState136[1];
+    pmtSaved = _useState136[0],
+    setPmtSaved = _useState136[1];
   const _useState137 = useState(false),
     _useState138 = _slicedToArray(_useState137, 2),
-    pmtSaved = _useState138[0],
-    setPmtSaved = _useState138[1];
-  const _useState139 = useState(false),
-    _useState140 = _slicedToArray(_useState139, 2),
-    deductConf = _useState140[0],
-    setDeductConf = _useState140[1];
+    deductConf = _useState138[0],
+    setDeductConf = _useState138[1];
   const ev = selId ? cateringEvents.find(e => e.id === selId) : null;
   const updateEv = updates => setCateringEvents(prev => prev.map(e => e.id === selId ? {
     ...e,
@@ -7082,51 +7108,51 @@ function EODTab(_ref24) {
     eodRecords = _usePersistedState4[0],
     setEodRecords = _usePersistedState4[1],
     loaded = _usePersistedState4[2];
-  const _useState141 = useState(today()),
+  const _useState139 = useState(today()),
+    _useState140 = _slicedToArray(_useState139, 2),
+    selDate = _useState140[0],
+    setSelDate = _useState140[1];
+  const _useState141 = useState("balance"),
     _useState142 = _slicedToArray(_useState141, 2),
-    selDate = _useState142[0],
-    setSelDate = _useState142[1];
-  const _useState143 = useState("balance"),
+    eodSec = _useState142[0],
+    setEodSec = _useState142[1]; // balance | transactions
+  const _useState143 = useState(""),
     _useState144 = _slicedToArray(_useState143, 2),
-    eodSec = _useState144[0],
-    setEodSec = _useState144[1]; // balance | transactions
+    cashCounted = _useState144[0],
+    setCashCounted = _useState144[1];
   const _useState145 = useState(""),
     _useState146 = _slicedToArray(_useState145, 2),
-    cashCounted = _useState146[0],
-    setCashCounted = _useState146[1];
+    cardTotal = _useState146[0],
+    setCardTotal = _useState146[1];
   const _useState147 = useState(""),
     _useState148 = _slicedToArray(_useState147, 2),
-    cardTotal = _useState148[0],
-    setCardTotal = _useState148[1];
+    transferTotal = _useState148[0],
+    setTransferTotal = _useState148[1];
   const _useState149 = useState(""),
     _useState150 = _slicedToArray(_useState149, 2),
-    transferTotal = _useState150[0],
-    setTransferTotal = _useState150[1];
-  const _useState151 = useState(""),
+    notes = _useState150[0],
+    setNotes = _useState150[1];
+  const _useState151 = useState(false),
     _useState152 = _slicedToArray(_useState151, 2),
-    notes = _useState152[0],
-    setNotes = _useState152[1];
-  const _useState153 = useState(false),
-    _useState154 = _slicedToArray(_useState153, 2),
-    saved = _useState154[0],
-    setSaved = _useState154[1];
+    saved = _useState152[0],
+    setSaved = _useState152[1];
   // Refund state
-  const _useState155 = useState(null),
+  const _useState153 = useState(null),
+    _useState154 = _slicedToArray(_useState153, 2),
+    refundOrder = _useState154[0],
+    setRefundOrder = _useState154[1]; // sale object being refunded
+  const _useState155 = useState(""),
     _useState156 = _slicedToArray(_useState155, 2),
-    refundOrder = _useState156[0],
-    setRefundOrder = _useState156[1]; // sale object being refunded
-  const _useState157 = useState(""),
+    refundReason = _useState156[0],
+    setRefundReason = _useState156[1];
+  const _useState157 = useState("Cash"),
     _useState158 = _slicedToArray(_useState157, 2),
-    refundReason = _useState158[0],
-    setRefundReason = _useState158[1];
-  const _useState159 = useState("Cash"),
+    refundMethod = _useState158[0],
+    setRefundMethod = _useState158[1];
+  const _useState159 = useState(null),
     _useState160 = _slicedToArray(_useState159, 2),
-    refundMethod = _useState160[0],
-    setRefundMethod = _useState160[1];
-  const _useState161 = useState(null),
-    _useState162 = _slicedToArray(_useState161, 2),
-    refundPin = _useState162[0],
-    setRefundPin = _useState162[1]; // pending refund needing PIN
+    refundPin = _useState160[0],
+    setRefundPin = _useState160[1]; // pending refund needing PIN
 
   // Only PAID sales count for EOD balancing (On Account is deferred)
   const allDay = sales.filter(s => s.date === selDate);
@@ -7680,14 +7706,14 @@ function EODTab(_ref24) {
 function ExpenseTrendsView(_ref25) {
   let expenses = _ref25.expenses,
     settings = _ref25.settings;
-  const _useState163 = useState("All"),
+  const _useState161 = useState("All"),
+    _useState162 = _slicedToArray(_useState161, 2),
+    expCat = _useState162[0],
+    setExpCat = _useState162[1];
+  const _useState163 = useState("monthly"),
     _useState164 = _slicedToArray(_useState163, 2),
-    expCat = _useState164[0],
-    setExpCat = _useState164[1];
-  const _useState165 = useState("monthly"),
-    _useState166 = _slicedToArray(_useState165, 2),
-    expPeriod = _useState166[0],
-    setExpPeriod = _useState166[1];
+    expPeriod = _useState164[0],
+    setExpPeriod = _useState164[1];
   const BASE_CATS = settings && settings.expenseCategories ? settings.expenseCategories : ["Lease", "Insurance", "Food & Inventory", "Supplies", "Marketing", "Utilities", "Staff Wages", "Licensing", "Other"];
   const EXPENSE_CATS = ["All", ...BASE_CATS];
   const CAT_PALETTE2 = [C.green, C.gold, C.darkGold, C.lightGreen, C.purple, C.blue, C.orange, "#AD1457", C.charcoal, C.teal, C.red, "#795548"];
@@ -7907,14 +7933,14 @@ function ReportsTab(_ref30) {
     recipes = _ref30.recipes,
     inventory = _ref30.inventory,
     cateringEvents = _ref30.cateringEvents;
-  const _useState167 = useState("monthly"),
+  const _useState165 = useState("monthly"),
+    _useState166 = _slicedToArray(_useState165, 2),
+    view = _useState166[0],
+    setView = _useState166[1];
+  const _useState167 = useState(today().slice(0, 7)),
     _useState168 = _slicedToArray(_useState167, 2),
-    view = _useState168[0],
-    setView = _useState168[1];
-  const _useState169 = useState(today().slice(0, 7)),
-    _useState170 = _slicedToArray(_useState169, 2),
-    selMonth = _useState170[0],
-    setSelMonth = _useState170[1];
+    selMonth = _useState168[0],
+    setSelMonth = _useState168[1];
   const proj = settings.projections || {};
   // Only count COLLECTED revenue (exclude on-account until paid)
   const paidSales = sales.filter(s => s.paymentStatus !== "on-account");
@@ -8619,10 +8645,10 @@ function ReportsTab(_ref30) {
 function NewPositionForm(_ref35) {
   let positions = _ref35.positions,
     setPositions = _ref35.setPositions;
-  const _useState171 = useState(""),
-    _useState172 = _slicedToArray(_useState171, 2),
-    name = _useState172[0],
-    setName = _useState172[1];
+  const _useState169 = useState(""),
+    _useState170 = _slicedToArray(_useState169, 2),
+    name = _useState170[0],
+    setName = _useState170[1];
   const add = () => {
     if (!name.trim()) return;
     const np = {
@@ -8663,10 +8689,10 @@ function NewPositionForm(_ref35) {
 function ExpCatForm(_ref36) {
   let settings = _ref36.settings,
     setSettings = _ref36.setSettings;
-  const _useState173 = useState(""),
-    _useState174 = _slicedToArray(_useState173, 2),
-    newCat = _useState174[0],
-    setNewCat = _useState174[1];
+  const _useState171 = useState(""),
+    _useState172 = _slicedToArray(_useState171, 2),
+    newCat = _useState172[0],
+    setNewCat = _useState172[1];
   const add = () => {
     if (!newCat.trim()) return;
     const existing = settings.expenseCategories || [];
@@ -8706,15 +8732,15 @@ function SettingsTab(_ref37) {
     setMenu = _ref37.setMenu,
     positions = _ref37.positions,
     setPositions = _ref37.setPositions;
-  const _useState175 = useState("business"),
+  const _useState173 = useState("business"),
+    _useState174 = _slicedToArray(_useState173, 2),
+    section = _useState174[0],
+    setSection = _useState174[1];
+  const _useState175 = useState(""),
     _useState176 = _slicedToArray(_useState175, 2),
-    section = _useState176[0],
-    setSection = _useState176[1];
-  const _useState177 = useState(""),
-    _useState178 = _slicedToArray(_useState177, 2),
-    newSupplier = _useState178[0],
-    setNewSupplier = _useState178[1];
-  const _useState179 = useState({
+    newSupplier = _useState176[0],
+    setNewSupplier = _useState176[1];
+  const _useState177 = useState({
       name: "",
       cat: "Beverages",
       price: "",
@@ -8723,37 +8749,37 @@ function SettingsTab(_ref37) {
       comesWith: "",
       customGroups: []
     }),
+    _useState178 = _slicedToArray(_useState177, 2),
+    menuForm = _useState178[0],
+    setMenuForm = _useState178[1];
+  const _useState179 = useState(null),
     _useState180 = _slicedToArray(_useState179, 2),
-    menuForm = _useState180[0],
-    setMenuForm = _useState180[1];
-  const _useState181 = useState(null),
+    custItemId = _useState180[0],
+    setCustItemId = _useState180[1]; // which item we're editing customGroups for
+  const _useState181 = useState([]),
     _useState182 = _slicedToArray(_useState181, 2),
-    custItemId = _useState182[0],
-    setCustItemId = _useState182[1]; // which item we're editing customGroups for
-  const _useState183 = useState([]),
+    custGroups = _useState182[0],
+    setCustGroups = _useState182[1]; // working copy of groups
+  const _useState183 = useState(""),
     _useState184 = _slicedToArray(_useState183, 2),
-    custGroups = _useState184[0],
-    setCustGroups = _useState184[1]; // working copy of groups
-  const _useState185 = useState(""),
+    newGroupLabel = _useState184[0],
+    setNewGroupLabel = _useState184[1];
+  const _useState185 = useState(true),
     _useState186 = _slicedToArray(_useState185, 2),
-    newGroupLabel = _useState186[0],
-    setNewGroupLabel = _useState186[1];
-  const _useState187 = useState(true),
+    newGroupReq = _useState186[0],
+    setNewGroupReq = _useState186[1];
+  const _useState187 = useState(""),
     _useState188 = _slicedToArray(_useState187, 2),
-    newGroupReq = _useState188[0],
-    setNewGroupReq = _useState188[1];
-  const _useState189 = useState(""),
+    newOptName = _useState188[0],
+    setNewOptName = _useState188[1];
+  const _useState189 = useState("0"),
     _useState190 = _slicedToArray(_useState189, 2),
-    newOptName = _useState190[0],
-    setNewOptName = _useState190[1];
-  const _useState191 = useState("0"),
+    newOptPrice = _useState190[0],
+    setNewOptPrice = _useState190[1];
+  const _useState191 = useState(null),
     _useState192 = _slicedToArray(_useState191, 2),
-    newOptPrice = _useState192[0],
-    setNewOptPrice = _useState192[1];
-  const _useState193 = useState(null),
-    _useState194 = _slicedToArray(_useState193, 2),
-    addingOptFor = _useState194[0],
-    setAddingOptFor = _useState194[1]; // groupId
+    addingOptFor = _useState192[0],
+    setAddingOptFor = _useState192[1]; // groupId
 
   const MENU_CATS = ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"];
   const addMenuItem = () => {
@@ -9641,10 +9667,10 @@ const TABS = [{
   label: "Settings"
 }];
 function App() {
-  const _useState195 = useState("pos"),
-    _useState196 = _slicedToArray(_useState195, 2),
-    tab = _useState196[0],
-    setTab = _useState196[1];
+  const _useState193 = useState("pos"),
+    _useState194 = _slicedToArray(_useState193, 2),
+    tab = _useState194[0],
+    setTab = _useState194[1];
   const _usePersistedState5 = usePersistedState("tog-settings", DEFAULT_SETTINGS),
     _usePersistedState6 = _slicedToArray(_usePersistedState5, 3),
     settings = _usePersistedState6[0],
@@ -9655,7 +9681,7 @@ function App() {
     menu = _usePersistedState8[0],
     setMenu = _usePersistedState8[1],
     mLoaded = _usePersistedState8[2];
-  const _usePersistedState9 = usePersistedState("tog-sales", []),
+  const _usePersistedState9 = useSharedState("tog-sales", []),
     _usePersistedState0 = _slicedToArray(_usePersistedState9, 3),
     sales = _usePersistedState0[0],
     setSales = _usePersistedState0[1],
@@ -9705,14 +9731,14 @@ function App() {
     kitchenOrders = _useSharedState2[0],
     setKitchenOrders = _useSharedState2[1];
   // Tab session hooks MUST be before early return (Rules of Hooks)
-  const _useState197 = useState({}),
+  const _useState195 = useState({}),
+    _useState196 = _slicedToArray(_useState195, 2),
+    tabSessions = _useState196[0],
+    setTabSessions = _useState196[1];
+  const _useState197 = useState(null),
     _useState198 = _slicedToArray(_useState197, 2),
-    tabSessions = _useState198[0],
-    setTabSessions = _useState198[1];
-  const _useState199 = useState(null),
-    _useState200 = _slicedToArray(_useState199, 2),
-    pendingTab = _useState200[0],
-    setPendingTab = _useState200[1];
+    pendingTab = _useState198[0],
+    setPendingTab = _useState198[1];
   const allLoaded = sLoaded && mLoaded && salLoaded && expLoaded && accLoaded && invLoaded && recLoaded && refLoaded && staffLoaded && posLoaded;
   if (!allLoaded) return /*#__PURE__*/React.createElement(LoadingScreen, null);
   const TAB_PERM_KEY = {
@@ -9723,7 +9749,7 @@ function App() {
     staff: "accessStaff",
     catering: "accessCatering",
     accounts: "accessAccounts",
-    eod: "accessEOD",
+    eod: null,
     reports: "accessReports",
     settings: "accessSettings"
   };
@@ -10025,7 +10051,7 @@ function App() {
 try {
   ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
 } catch(e) {
-  document.getElementById('root').innerHTML = '<div style="padding:40px;text-align:center;font-family:Georgia,serif"><div style="font-size:40px">🍽️</div><h2 style="margin:16px 0 8px">Loading Error</h2><p style="color:#666;font-size:14px">' + e.message + '</p><button onclick="location.reload()" style="margin-top:16px;background:#1B5E20;color:white;border:none;border-radius:8px;padding:12px 24px;font-size:14px;cursor:pointer">Reload</button></div>';
+  document.getElementById('root').innerHTML = '<div style="padding:40px;text-align:center;font-family:Georgia,serif"><div style="font-size:40px">&#x1F37D;</div><h2 style="margin:16px 0 8px">Loading Error</h2><p style="color:#666;font-size:14px">' + e.message + '</p><button onclick="location.reload()" style="margin-top:16px;background:#1B5E20;color:white;border:none;border-radius:8px;padding:12px 24px;font-size:14px;cursor:pointer">Reload</button></div>';
   console.error('App error:', e);
 }
   </script>
