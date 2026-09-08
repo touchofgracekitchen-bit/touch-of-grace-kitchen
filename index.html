@@ -2913,6 +2913,7 @@ function InventoryTab({
     price: "",
     supplier: ""
   });
+  const [supplierOther, setSupplierOther] = useState(false);
   // recipe editing
   const [editRecipeId, setEditRecipeId] = useState(null);
   const [recipeLines, setRecipeLines] = useState([]);
@@ -4026,7 +4027,15 @@ function InventoryTab({
         prevAvgCost: oldCost,
         newAvgCost: newAvg
       }]);
+      // A newly-typed supplier ("Other") is saved to the master list so it shows up in the dropdown next time
+      if (receiveForm.supplier && !(settings.suppliers || []).includes(receiveForm.supplier)) {
+        setSettings({
+          ...settings,
+          suppliers: [...(settings.suppliers || []), receiveForm.supplier]
+        });
+      }
       setReceiveMode(false);
+      setSupplierOther(false);
     };
     return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
       style: {
@@ -4034,7 +4043,7 @@ function InventoryTab({
         marginBottom: 16,
         fontSize: 14
       }
-    }, /*#__PURE__*/React.createElement("b", null, item.name), " — Stock: ", /*#__PURE__*/React.createElement("b", null, item.stock, " ", item.unit), " @ avg ", /*#__PURE__*/React.createElement("b", null, item.avgCost ? fmt(item.avgCost) : "not set", "/", item.unit)), [["Qty received (" + item.unit + ")", "qty", "number"], ["Cost per unit ($)", "price", "number"], ["Supplier", "supplier", "text"]].map(([lbl, f, t]) => /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("b", null, item.name), " — Stock: ", /*#__PURE__*/React.createElement("b", null, item.stock, " ", item.unit), " @ avg ", /*#__PURE__*/React.createElement("b", null, item.avgCost ? fmt(item.avgCost) : "not set", "/", item.unit)), [["Qty received (" + item.unit + ")", "qty", "number"], ["Cost per unit ($)", "price", "number"]].map(([lbl, f, t]) => /*#__PURE__*/React.createElement("div", {
       key: f,
       style: {
         marginBottom: 12
@@ -4060,7 +4069,79 @@ function InventoryTab({
         fontSize: 14
       },
       step: "0.01"
-    }))), receiveForm.qty && receiveForm.price && !isNaN(parseFloat(receiveForm.qty)) && !isNaN(parseFloat(receiveForm.price)) && (() => {
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 12
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.charcoal,
+        marginBottom: 4
+      }
+    }, "Supplier"), !supplierOther ? /*#__PURE__*/React.createElement("select", {
+      value: receiveForm.supplier,
+      onChange: e => {
+        if (e.target.value === "__other__") {
+          setSupplierOther(true);
+          setReceiveForm({
+            ...receiveForm,
+            supplier: ""
+          });
+        } else setReceiveForm({
+          ...receiveForm,
+          supplier: e.target.value
+        });
+      },
+      style: {
+        width: "100%",
+        padding: "8px 10px",
+        border: "1px solid " + C.border,
+        borderRadius: 6,
+        fontSize: 14,
+        background: C.white,
+        fontFamily: "inherit"
+      }
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Select supplier..."), (settings.suppliers || []).map(s => /*#__PURE__*/React.createElement("option", {
+      key: s,
+      value: s
+    }, s)), /*#__PURE__*/React.createElement("option", {
+      value: "__other__"
+    }, "Other (type new)...")) : /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "text",
+      value: receiveForm.supplier,
+      onChange: e => setReceiveForm({
+        ...receiveForm,
+        supplier: e.target.value
+      }),
+      placeholder: "New supplier name",
+      autoFocus: true,
+      style: {
+        flex: 1,
+        padding: "8px 10px",
+        border: "1px solid " + C.border,
+        borderRadius: 6,
+        fontSize: 14
+      }
+    }), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        setSupplierOther(false);
+        setReceiveForm({
+          ...receiveForm,
+          supplier: ""
+        });
+      },
+      color: C.charcoal,
+      outline: true
+    }, "Back to list"))), receiveForm.qty && receiveForm.price && !isNaN(parseFloat(receiveForm.qty)) && !isNaN(parseFloat(receiveForm.price)) && (() => {
       const q = parseFloat(receiveForm.qty),
         p = parseFloat(receiveForm.price),
         os = item.stock || 0,
@@ -4109,7 +4190,9 @@ function ExpensesTab({
     cat: CATS[0] || "Other",
     desc: "",
     amount: "",
-    supplier: ""
+    supplier: "",
+    gst: "",
+    pst: ""
   });
   const [addMode, setAddMode] = useState(false);
   const [filterMonth, setFilterMonth] = useState(today().slice(0, 7));
@@ -4128,14 +4211,18 @@ function ExpensesTab({
     setExpenses([...expenses, {
       ...form,
       id: Date.now(),
-      amount: parseFloat(form.amount)
+      amount: parseFloat(form.amount),
+      gst: parseFloat(form.gst) || 0,
+      pst: parseFloat(form.pst) || 0
     }]);
     setForm({
       date: today(),
-      cat: "Food & Inventory",
+      cat: CATS[0] || "Other",
       desc: "",
       amount: "",
-      supplier: ""
+      supplier: "",
+      gst: "",
+      pst: ""
     });
     setAddMode(false);
   };
@@ -4279,7 +4366,8 @@ function ExpensesTab({
     placeholder: "Amount (CAD)"
   })), /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "flex",
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr auto auto",
       gap: 10,
       alignItems: "center"
     }
@@ -4289,10 +4377,25 @@ function ExpensesTab({
       ...form,
       supplier: v
     }),
-    placeholder: "Supplier (optional)",
-    style: {
-      maxWidth: 220
-    }
+    placeholder: "Supplier (optional)"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: form.gst,
+    onChange: v => setForm({
+      ...form,
+      gst: v
+    }),
+    placeholder: "GST on receipt ($)",
+    step: "0.01"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: form.pst,
+    onChange: v => setForm({
+      ...form,
+      pst: v
+    }),
+    placeholder: "PST on receipt ($)",
+    step: "0.01"
   }), /*#__PURE__*/React.createElement(Btn, {
     onClick: add
   }, "Add"), /*#__PURE__*/React.createElement(Btn, {
@@ -8274,33 +8377,69 @@ function ReportsTab({
   countLog
 }) {
   const [view, setView] = useState("monthly");
-  const [selMonth, setSelMonth] = useState(today().slice(0, 7));
+
+  // Flexible date range — defaults to the current month, but any range
+  // works so you can compare specific weeks against each other.
+  const startOfWeek = d => {
+    const dt = new Date(d + "T00:00:00");
+    const day = dt.getDay();
+    const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
+    const m = new Date(dt.setDate(diff));
+    return m.getFullYear() + "-" + String(m.getMonth() + 1).padStart(2, "0") + "-" + String(m.getDate()).padStart(2, "0");
+  };
+  const addDays = (d, n) => {
+    const dt = new Date(d + "T00:00:00");
+    dt.setDate(dt.getDate() + n);
+    return dt.getFullYear() + "-" + String(dt.getMonth() + 1).padStart(2, "0") + "-" + String(dt.getDate()).padStart(2, "0");
+  };
+  const monthStart = today().slice(0, 7) + "-01";
+  const [dateFrom, setDateFrom] = useState(monthStart);
+  const [dateTo, setDateTo] = useState(today());
+  const applyPreset = preset => {
+    const t = today();
+    if (preset === "thisWeek") {
+      setDateFrom(startOfWeek(t));
+      setDateTo(t);
+    } else if (preset === "lastWeek") {
+      const lastWkStart = addDays(startOfWeek(t), -7);
+      setDateFrom(lastWkStart);
+      setDateTo(addDays(lastWkStart, 6));
+    } else if (preset === "thisMonth") {
+      setDateFrom(t.slice(0, 7) + "-01");
+      setDateTo(t);
+    } else if (preset === "lastMonth") {
+      const d = new Date(t + "T00:00:00");
+      d.setDate(1);
+      d.setDate(0);
+      const lm = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+      setDateFrom(lm + "-01");
+      setDateTo(lm + "-" + String(d.getDate()).padStart(2, "0"));
+    }
+  };
+  const selMonth = dateFrom.slice(0, 7); // kept for the long-term monthly trend chart below
+
   const proj = settings.projections || {};
   // Only count COLLECTED revenue (exclude on-account until paid)
   const paidSales = sales.filter(s => s.paymentStatus !== "on-account");
-  const allAccPmts = (accounts || []).flatMap(a => a.payments || []);
   const mRev = {},
     mExp = {};
   paidSales.forEach(s => {
-    const k = mKey(s.date);
+    const k = mKey(s.settledDate || s.date);
     mRev[k] = (mRev[k] || 0) + s.total;
-  });
-  allAccPmts.forEach(p => {
-    const k = mKey(p.date);
-    mRev[k] = (mRev[k] || 0) + p.amount;
   });
   expenses.forEach(e => {
     const k = mKey(e.date);
     mExp[k] = (mExp[k] || 0) + e.amount;
   });
   const allMonths = Array.from(new Set([...Object.keys(mRev), ...Object.keys(mExp)])).sort();
-  const mSales = paidSales.filter(s => s.date.startsWith(selMonth));
-  const allMSales = sales.filter(s => s.date.startsWith(selMonth));
-  const mExps = expenses.filter(e => e.date.startsWith(selMonth));
-  const mRevenue = mSales.reduce((s, x) => s + x.total, 0) + allAccPmts.filter(p => p.date.startsWith(selMonth)).reduce((s, p) => s + p.amount, 0);
+  const inRange = d => d >= dateFrom && d <= dateTo;
+  const mSales = paidSales.filter(s => inRange(s.settledDate || s.date));
+  const allMSales = sales.filter(s => inRange(s.date));
+  const mExps = expenses.filter(e => inRange(e.date));
+  const mRevenue = mSales.reduce((s, x) => s + x.total, 0);
   const mExpTotal = mExps.reduce((s, e) => s + e.amount, 0);
   const mProfit = mRevenue - mExpTotal;
-  const mn = parseInt(selMonth.split("-")[1]);
+  const mn = parseInt(today().split("-")[1]);
   const projected = proj[mn] || 0;
   const itemCounts = {};
   mSales.forEach(s => s.items.forEach(i => {
@@ -8344,18 +8483,68 @@ function ReportsTab({
       fontFamily: "inherit",
       fontWeight: 700
     }
-  }, l)), view === "detail" && /*#__PURE__*/React.createElement("input", {
-    type: "month",
-    value: selMonth,
-    onChange: e => setSelMonth(e.target.value),
+  }, l))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 14,
+      flexWrap: "wrap",
+      alignItems: "center",
+      background: C.lightGold,
+      borderRadius: 10,
+      padding: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700,
+      color: C.charcoal
+    }
+  }, "Date range:"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: dateFrom,
+    onChange: e => setDateFrom(e.target.value),
     style: {
       border: "1px solid " + C.border,
-      borderRadius: 8,
-      padding: "8px 12px",
+      borderRadius: 6,
+      padding: "6px 10px",
       fontSize: 13,
-      background: C.cream
+      background: C.white
     }
-  })), view === "monthly" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13
+    }
+  }, "to"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: dateTo,
+    onChange: e => setDateTo(e.target.value),
+    style: {
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "6px 10px",
+      fontSize: 13,
+      background: C.white
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      marginLeft: 8
+    }
+  }, [["thisWeek", "This Week"], ["lastWeek", "Last Week"], ["thisMonth", "This Month"], ["lastMonth", "Last Month"]].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    onClick: () => applyPreset(k),
+    style: {
+      background: C.white,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "6px 12px",
+      fontSize: 12,
+      cursor: "pointer",
+      fontFamily: "inherit"
+    }
+  }, l)))), view === "monthly" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(3,1fr)",
@@ -8365,7 +8554,7 @@ function ReportsTab({
   }, /*#__PURE__*/React.createElement(Stat, {
     icon: "💵",
     label: "Total Collected",
-    val: fmt(paidSales.reduce((s, x) => s + x.total, 0) + allAccPmts.reduce((s, p) => s + p.amount, 0)),
+    val: fmt(paidSales.reduce((s, x) => s + x.total, 0)),
     color: C.green
   }), /*#__PURE__*/React.createElement(Stat, {
     icon: "💸",
@@ -8459,7 +8648,7 @@ function ReportsTab({
     label: "Orders",
     val: mSales.length,
     color: C.blue
-  })), topItems.length > 0 ? /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Top Selling Items This Month"), topItems.map(([name, {
+  })), topItems.length > 0 ? /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Top Selling Items (", dateFrom, " to ", dateTo, ")"), topItems.map(([name, {
     qty,
     rev
   }]) => /*#__PURE__*/React.createElement("div", {
@@ -8510,7 +8699,7 @@ function ReportsTab({
   }), /*#__PURE__*/React.createElement(Stat, {
     icon: "📋",
     label: "On Account Outstanding",
-    val: fmt(sales.filter(s => s.paymentStatus === "on-account").reduce((s, x) => s + x.total, 0) - allAccPmts.reduce((s, p) => s + p.amount, 0)),
+    val: fmt(sales.filter(s => s.paymentStatus === "on-account").reduce((s, x) => s + x.total, 0)),
     color: C.orange
   })), /*#__PURE__*/React.createElement("div", {
     style: {
