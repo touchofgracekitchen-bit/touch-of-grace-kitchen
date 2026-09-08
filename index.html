@@ -1675,10 +1675,24 @@ function CustomizeModal({
   const confirm = () => {
     const parts = groups.map(g => selections[g.id]).filter(Boolean).filter(s => s !== "No thanks" && s !== "No protein");
     const note = [...parts, request].filter(Boolean).join(" | ");
+    // Find which chosen option (if any) is linked to a Side or Protein
+    // component, so inventory deducts the right recipe.
+    let chosenSideIds = [],
+      chosenProteinId = null;
+    groups.forEach(g => {
+      const chosenName = selections[g.id];
+      const chosenOpt = g.options.find(o => o.name === chosenName);
+      if (chosenOpt) {
+        if (chosenOpt.sideIds && chosenOpt.sideIds.length) chosenSideIds = [...chosenSideIds, ...chosenOpt.sideIds];
+        if (chosenOpt.proteinId) chosenProteinId = chosenOpt.proteinId;
+      }
+    });
     onConfirm({
       ...item,
       price: item.price + extraPrice,
-      customization: note || null
+      customization: note || null,
+      chosenSideIds,
+      chosenProteinId
     });
   };
   if (groups.length === 0) {
@@ -2882,6 +2896,10 @@ function InventoryTab({
   menu,
   recipes,
   setRecipes,
+  proteins,
+  setProteins,
+  sides,
+  setSides,
   canSeeRecipes,
   countLog,
   setCountLog
@@ -2917,6 +2935,10 @@ function InventoryTab({
   // recipe editing
   const [editRecipeId, setEditRecipeId] = useState(null);
   const [recipeLines, setRecipeLines] = useState([]);
+  const [editCompId, setEditCompId] = useState(null); // {type:"protein"|"side", id} being recipe-edited, or "new-protein"/"new-side"
+  const [compLines, setCompLines] = useState([]);
+  const [newCompName, setNewCompName] = useState("");
+  const [newCompType, setNewCompType] = useState("protein");
   const CATS = ["Proteins", "Dry Goods", "Produce", "Pantry", "Spices", "Sides", "Beverages", "Packaging"];
   const allSuppliers = settings.suppliers || [];
   const lowStock = inventory.filter(i => i.stock <= i.minStock);
@@ -3102,6 +3124,56 @@ function InventoryTab({
     [field]: field === "qty" ? val : parseInt(val) || ""
   } : r));
   const removeLine = idx => setRecipeLines(recipeLines.filter((_, i) => i !== idx));
+
+  // -- Proteins & Sides component library --
+  const addComponent = () => {
+    if (!newCompName.trim()) return;
+    const list = newCompType === "protein" ? proteins : sides;
+    const setList = newCompType === "protein" ? setProteins : setSides;
+    setList([...list, {
+      id: Date.now(),
+      name: newCompName.trim(),
+      recipe: []
+    }]);
+    setNewCompName("");
+  };
+  const deleteComponent = (type, id) => {
+    if (!window.confirm("Delete this " + type + "? Menu items linking to it will need a new selection.")) return;
+    if (type === "protein") setProteins(proteins.filter(p => p.id !== id));else setSides(sides.filter(s => s.id !== id));
+  };
+  const openComponentRecipe = (type, comp) => {
+    setEditCompId({
+      type,
+      id: comp.id
+    });
+    setCompLines([...(comp.recipe || [])].map(r => ({
+      ...r
+    })));
+  };
+  const saveComponentRecipe = () => {
+    const cleanLines = compLines.filter(r => r.invId && r.qty > 0);
+    if (editCompId.type === "protein") setProteins(proteins.map(p => p.id === editCompId.id ? {
+      ...p,
+      recipe: cleanLines
+    } : p));else setSides(sides.map(s => s.id === editCompId.id ? {
+      ...s,
+      recipe: cleanLines
+    } : s));
+    setEditCompId(null);
+  };
+  const addCompLine = () => setCompLines([...compLines, {
+    invId: "",
+    qty: ""
+  }]);
+  const updateCompLine = (idx, field, val) => setCompLines(compLines.map((r, i) => i === idx ? {
+    ...r,
+    [field]: field === "qty" ? val : parseInt(val) || ""
+  } : r));
+  const removeCompLine = idx => setCompLines(compLines.filter((_, i) => i !== idx));
+  const componentCost = comp => (comp.recipe || []).reduce((s, r) => {
+    const ing = inventory.find(i => i.id === r.invId);
+    return s + (ing && ing.avgCost ? ing.avgCost * r.qty : 0);
+  }, 0);
   const filtered = inventory.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
   return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, lowStock.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -3149,7 +3221,7 @@ function InventoryTab({
       gap: 8,
       marginBottom: 18
     }
-  }, [["stock", "Stock Levels"], ["count", "Stock Count"], ...(canSeeRecipes ? [["recipes", "Recipe Mapping"]] : [])].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["stock", "Stock Levels"], ["count", "Stock Count"], ...(canSeeRecipes ? [["recipes", "Recipe Mapping"], ["components", "Proteins & Sides"]] : [])].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
     key: k,
     onClick: () => setSection(k),
     style: {
@@ -3973,7 +4045,228 @@ function InventoryTab({
       onClick: () => openRecipe(item),
       color: recipe.length > 0 ? C.gold : C.blue
     }, recipe.length > 0 ? "Edit" : "Set Recipe")));
-  })))))), receiveMode && /*#__PURE__*/React.createElement("div", {
+  }))))), section === "components" && canSeeRecipes && /*#__PURE__*/React.createElement("div", null, editCompId && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: "rgba(0,0,0,0.65)",
+      zIndex: 900,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      width: 520,
+      maxHeight: "80vh",
+      overflow: "auto",
+      border: "2px solid " + C.gold
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Recipe: ", ((editCompId.type === "protein" ? proteins : sides).find(c => c.id === editCompId.id) || {}).name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 14,
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, "Set the quantity of each ingredient used per 1 serving of this ", editCompId.type, ". Any menu item linked to it deducts these automatically."), compLines.map((line, idx) => /*#__PURE__*/React.createElement("div", {
+    key: idx,
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("select", {
+    value: line.invId,
+    onChange: e => updateCompLine(idx, "invId", e.target.value),
+    style: {
+      flex: 2,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "7px 10px",
+      fontSize: 13,
+      background: C.cream
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "-- Select ingredient --"), inventory.map(i => /*#__PURE__*/React.createElement("option", {
+    key: i.id,
+    value: i.id
+  }, i.name, " (", i.unit, ")"))), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    value: line.qty,
+    onChange: e => updateCompLine(idx, "qty", e.target.value),
+    placeholder: "Qty",
+    step: "0.01",
+    style: {
+      width: 80,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "7px 10px",
+      fontSize: 13,
+      background: C.cream
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.gray,
+      minWidth: 30
+    }
+  }, line.invId ? (inventory.find(i => i.id === parseInt(line.invId)) || {}).unit || "" : ""), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => removeCompLine(idx),
+    color: C.red,
+    outline: true
+  }, "X"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: addCompLine,
+    color: C.blue,
+    outline: true,
+    small: true
+  }, "+ Add Ingredient"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginLeft: "auto",
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: saveComponentRecipe
+  }, "Save Recipe"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setEditCompId(null),
+    color: C.charcoal,
+    outline: true
+  }, "Cancel"))))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16,
+      background: C.lightGold,
+      border: "1px dashed " + C.gold
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13,
+      marginBottom: 10,
+      color: C.dark
+    }
+  }, "Proteins and sides defined here can be reused across any menu item — set the cost once, update it once, and every dish using it stays accurate."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Sel, {
+    value: newCompType,
+    onChange: setNewCompType,
+    options: ["protein", "side"],
+    style: {
+      width: 140
+    }
+  }), /*#__PURE__*/React.createElement(Inp, {
+    value: newCompName,
+    onChange: setNewCompName,
+    placeholder: "e.g. Jerk Chicken, Rice & Peas",
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    onClick: addComponent
+  }, "+ Add"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Proteins"), proteins.length === 0 ? /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.gray,
+      fontSize: 13,
+      textAlign: "center",
+      padding: 16
+    }
+  }, "No proteins added yet.") : proteins.map(p => /*#__PURE__*/React.createElement("div", {
+    key: p.id,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "10px 0",
+      borderBottom: "1px solid " + C.border
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 14
+    }
+  }, p.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, (p.recipe || []).length, " ingredient", (p.recipe || []).length !== 1 ? "s" : "", " — cost/serving: ", fmt(componentCost(p)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => openComponentRecipe("protein", p),
+    color: (p.recipe || []).length > 0 ? C.gold : C.blue
+  }, (p.recipe || []).length > 0 ? "Edit" : "Set Recipe"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => deleteComponent("protein", p.id),
+    color: C.red,
+    outline: true
+  }, "Del"))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Sides"), sides.length === 0 ? /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.gray,
+      fontSize: 13,
+      textAlign: "center",
+      padding: 16
+    }
+  }, "No sides added yet.") : sides.map(s => /*#__PURE__*/React.createElement("div", {
+    key: s.id,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "10px 0",
+      borderBottom: "1px solid " + C.border
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 14
+    }
+  }, s.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, (s.recipe || []).length, " ingredient", (s.recipe || []).length !== 1 ? "s" : "", " — cost/serving: ", fmt(componentCost(s)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => openComponentRecipe("side", s),
+    color: (s.recipe || []).length > 0 ? C.gold : C.blue
+  }, (s.recipe || []).length > 0 ? "Edit" : "Set Recipe"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => deleteComponent("side", s.id),
+    color: C.red,
+    outline: true
+  }, "Del")))))))), receiveMode && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
@@ -9416,7 +9709,9 @@ function SettingsTab({
   menu,
   setMenu,
   positions,
-  setPositions
+  setPositions,
+  proteins,
+  sides
 }) {
   const [section, setSection] = useState("business");
   const [newSupplier, setNewSupplier] = useState("");
@@ -9427,7 +9722,9 @@ function SettingsTab({
     allergens: "",
     available: true,
     comesWith: "",
-    customGroups: []
+    customGroups: [],
+    proteinId: "",
+    sideIds: []
   });
   const [editingMenuId, setEditingMenuId] = useState(null);
   const [custItemId, setCustItemId] = useState(null); // which item we're editing customGroups for
@@ -9437,7 +9734,8 @@ function SettingsTab({
   const [newOptName, setNewOptName] = useState("");
   const [newOptPrice, setNewOptPrice] = useState("0");
   const [addingOptFor, setAddingOptFor] = useState(null); // groupId
-
+  const [newOptSideIds, setNewOptSideIds] = useState([]);
+  const [newOptProteinId, setNewOptProteinId] = useState("");
   const MENU_CATS = ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"];
   const addMenuItem = () => {
     if (!menuForm.name || !menuForm.price) return;
@@ -9469,7 +9767,9 @@ function SettingsTab({
       allergens: '',
       available: true,
       comesWith: '',
-      customGroups: []
+      customGroups: [],
+      proteinId: '',
+      sideIds: []
     });
   };
   ;
@@ -9500,15 +9800,20 @@ function SettingsTab({
   const removeGroup = gid => setCustGroups(custGroups.filter(g => g.id !== gid));
   const addOption = gid => {
     if (!newOptName.trim()) return;
+    const opt = {
+      name: newOptName.trim(),
+      price: parseFloat(newOptPrice) || 0
+    };
+    if (newOptSideIds.length > 0) opt.sideIds = newOptSideIds.map(id => parseInt(id));
+    if (newOptProteinId) opt.proteinId = parseInt(newOptProteinId);
     setCustGroups(custGroups.map(g => g.id === gid ? {
       ...g,
-      options: [...g.options, {
-        name: newOptName.trim(),
-        price: parseFloat(newOptPrice) || 0
-      }]
+      options: [...g.options, opt]
     } : g));
     setNewOptName("");
     setNewOptPrice("0");
+    setNewOptSideIds([]);
+    setNewOptProteinId("");
     setAddingOptFor(null);
   };
   const removeOption = (gid, oname) => setCustGroups(custGroups.map(g => g.id === gid ? {
@@ -9852,7 +10157,14 @@ function SettingsTab({
       padding: "4px 10px",
       fontSize: 12
     }
-  }, /*#__PURE__*/React.createElement("span", null, opt.name, opt.price > 0 ? " (+" + fmt(opt.price) + ")" : ""), /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement("span", null, opt.name, opt.price > 0 ? " (+" + fmt(opt.price) + ")" : ""), (opt.sideIds || []).map(sid => /*#__PURE__*/React.createElement(Badge, {
+    key: sid,
+    small: true,
+    color: C.teal
+  }, (sides.find(s => s.id === sid) || {}).name || "side")), opt.proteinId && /*#__PURE__*/React.createElement(Badge, {
+    small: true,
+    color: C.orange
+  }, (proteins.find(p => p.id === opt.proteinId) || {}).name || "protein"), /*#__PURE__*/React.createElement("button", {
     onClick: () => removeOption(group.id, opt.name),
     style: {
       background: "none",
@@ -9863,11 +10175,12 @@ function SettingsTab({
       fontSize: 13,
       lineHeight: 1
     }
-  }, "x")))), addingOptFor === group.id ? /*#__PURE__*/React.createElement("div", {
+  }, "x")))), addingOptFor === group.id ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 8,
-      alignItems: "center"
+      alignItems: "center",
+      marginBottom: 6
     }
   }, /*#__PURE__*/React.createElement(Inp, {
     value: newOptName,
@@ -9884,7 +10197,78 @@ function SettingsTab({
     style: {
       width: 80
     }
-  }), /*#__PURE__*/React.createElement(Btn, {
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: C.charcoal,
+      marginBottom: 2
+    }
+  }, "Deducts these sides (tick all that apply):"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 4
+    }
+  }, (sides || []).length === 0 ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: C.gray
+    }
+  }, "No sides in library yet") : (sides || []).map(s => {
+    const checked = newOptSideIds.includes(String(s.id));
+    return /*#__PURE__*/React.createElement("label", {
+      key: s.id,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 3,
+        fontSize: 11,
+        background: checked ? C.lightGold : C.white,
+        border: "1px solid " + C.border,
+        borderRadius: 5,
+        padding: "3px 7px",
+        cursor: "pointer"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: checked,
+      onChange: () => {
+        setNewOptSideIds(checked ? newOptSideIds.filter(id => id !== String(s.id)) : [...newOptSideIds, String(s.id)]);
+      }
+    }), s.name);
+  }))), /*#__PURE__*/React.createElement("select", {
+    value: newOptProteinId,
+    onChange: e => setNewOptProteinId(e.target.value),
+    style: {
+      width: 160,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "6px 8px",
+      fontSize: 12,
+      background: C.white
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "No protein linked"), (proteins || []).map(p => /*#__PURE__*/React.createElement("option", {
+    key: p.id,
+    value: p.id
+  }, "Deducts protein: ", p.name)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
     small: true,
     onClick: () => addOption(group.id)
   }, "Add"), /*#__PURE__*/React.createElement(Btn, {
@@ -9892,7 +10276,7 @@ function SettingsTab({
     onClick: () => setAddingOptFor(null),
     color: C.charcoal,
     outline: true
-  }, "Cancel")) : /*#__PURE__*/React.createElement(Btn, {
+  }, "Cancel"))) : /*#__PURE__*/React.createElement(Btn, {
     small: true,
     onClick: () => {
       setAddingOptFor(group.id);
@@ -10013,7 +10397,69 @@ function SettingsTab({
       comesWith: v
     }),
     placeholder: "Comes with (comma separated)"
-  }), /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("select", {
+    value: menuForm.proteinId,
+    onChange: e => setMenuForm({
+      ...menuForm,
+      proteinId: e.target.value
+    }),
+    style: {
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "8px 10px",
+      fontSize: 14,
+      background: C.cream,
+      fontFamily: "inherit"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "No default protein"), (proteins || []).map(p => /*#__PURE__*/React.createElement("option", {
+    key: p.id,
+    value: p.id
+  }, "Protein: ", p.name))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      marginBottom: 4
+    }
+  }, "Default sides always included:"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6
+    }
+  }, (sides || []).length === 0 ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: C.gray
+    }
+  }, "No sides defined yet — add some in Inventory → Proteins & Sides") : (sides || []).map(s => {
+    const checked = (menuForm.sideIds || []).includes(s.id);
+    return /*#__PURE__*/React.createElement("label", {
+      key: s.id,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 11,
+        background: checked ? C.lightGold : C.white,
+        border: "1px solid " + C.border,
+        borderRadius: 6,
+        padding: "3px 8px",
+        cursor: "pointer"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: checked,
+      onChange: () => {
+        const next = checked ? (menuForm.sideIds || []).filter(id => id !== s.id) : [...(menuForm.sideIds || []), s.id];
+        setMenuForm({
+          ...menuForm,
+          sideIds: next
+        });
+      }
+    }), s.name);
+  }))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 12,
@@ -10057,7 +10503,9 @@ function SettingsTab({
         allergens: '',
         available: true,
         comesWith: '',
-        customGroups: []
+        customGroups: [],
+        proteinId: '',
+        sideIds: []
       });
     },
     color: C.charcoal,
@@ -10179,7 +10627,9 @@ function SettingsTab({
         allergens: (item.allergens || []).join(', '),
         available: item.available,
         comesWith: (item.comesWith || []).join(', '),
-        customGroups: item.customGroups || []
+        customGroups: item.customGroups || [],
+        proteinId: item.proteinId || "",
+        sideIds: item.sideIds || []
       });
     },
     color: C.blue,
@@ -10498,6 +10948,10 @@ function App() {
   const [accounts, setAccounts, accLoaded] = usePersistedState("tog-accounts", ACCOUNTS_INIT);
   const [inventory, setInventory, invLoaded] = usePersistedState("tog-inventory", INVENTORY_INIT);
   const [recipes, setRecipes, recLoaded] = usePersistedState("tog-recipes", RECIPES_INIT);
+  const [proteins, setProteins, protLoaded] = usePersistedState("tog-proteins", []);
+  const [menuMigV1, setMenuMigV1] = usePersistedState("tog-menu-migrated-v1", false);
+  const [menuMigV2, setMenuMigV2] = usePersistedState("tog-menu-migrated-v2", false);
+  const [sides, setSides, sidesLoaded] = usePersistedState("tog-sides", []);
   const [refunds, setRefunds, refLoaded] = usePersistedState("tog-refunds", []);
   const [countLog, setCountLog, logLoaded] = usePersistedState("tog-count-log", []);
   const [cateringEvents, setCateringEvents, catLoaded] = usePersistedState("tog-catering", CATERING_INIT);
@@ -10543,18 +10997,44 @@ function App() {
       const updated = prev.map(i => ({
         ...i
       }));
-      saleItems.forEach(saleItem => {
-        const recipe = recipes[saleItem.id] || [];
-        recipe.forEach(ing => {
+      const applyRecipe = (recipeLines, qty) => {
+        (recipeLines || []).forEach(ing => {
           const idx = updated.findIndex(i => i.id === ing.invId);
           if (idx >= 0) {
-            const newStock = Math.max(0, parseFloat((updated[idx].stock - ing.qty * saleItem.qty).toFixed(4)));
+            const newStock = Math.max(0, parseFloat((updated[idx].stock - ing.qty * qty).toFixed(4)));
             updated[idx] = {
               ...updated[idx],
               stock: newStock
             };
           }
         });
+      };
+      saleItems.forEach(saleItem => {
+        // 1) The item's own base recipe (packaging, seasoning, anything not
+        //    covered by a protein/side component).
+        applyRecipe(recipes[saleItem.id], saleItem.qty);
+        // 2) Effective protein: whichever the customer chose at order time,
+        //    else the menu item's own default protein.
+        const menuDef = menu.find(m => m.id === saleItem.id) || {};
+        const effProteinId = saleItem.chosenProteinId || menuDef.proteinId;
+        if (effProteinId) {
+          const prot = proteins.find(p => p.id === parseInt(effProteinId));
+          if (prot) applyRecipe(prot.recipe, saleItem.qty);
+        }
+        // 3) Effective side(s): the customer's chosen option can bundle one
+        //    or more sides (e.g. "Rice & Peas" + free "Vegetable"). If they
+        //    customized, that replaces the menu item's own default sides.
+        if (saleItem.chosenSideIds && saleItem.chosenSideIds.length > 0) {
+          saleItem.chosenSideIds.forEach(sid => {
+            const side = sides.find(s => s.id === parseInt(sid));
+            if (side) applyRecipe(side.recipe, saleItem.qty);
+          });
+        } else {
+          (menuDef.sideIds || []).forEach(sid => {
+            const side = sides.find(s => s.id === sid);
+            if (side) applyRecipe(side.recipe, saleItem.qty);
+          });
+        }
       });
       return updated;
     });
@@ -10596,6 +11076,334 @@ function App() {
     });
     if (needsFix) setAccounts(fixed);
   }, [accounts.length]);
+
+  // One-time menu update: brings the menu and side/protein library in line
+  // with the new tax-inclusive poster pricing (Sept 2026). Prices below are
+  // pre-tax figures back-calculated from the poster's tax-included prices
+  // at 5% GST / 0% PST, so the same-old tax-on-top math still reproduces
+  // the exact poster price at checkout. Runs once; safe to leave in place.
+  useEffect(() => {
+    if (menu.length === 0) return; // wait for real data to load first
+    if (menuMigV1) return; // already migrated
+
+    // 1) Ensure the core sides exist in the Sides library (name only —
+    //    recipes still need to be set in Inventory > Proteins & Sides).
+    const sideDefs = ["Salad", "Rice & Peas", "White Rice", "Vegetable", "Fries", "Festival"];
+    let nextSides = [...sides];
+    const sideId = {};
+    sideDefs.forEach(name => {
+      let existing = nextSides.find(s => s.name.toLowerCase() === name.toLowerCase());
+      if (!existing) {
+        existing = {
+          id: Date.now() + Math.floor(Math.random() * 100000),
+          name,
+          recipe: []
+        };
+        nextSides = [...nextSides, existing];
+      }
+      sideId[name] = existing.id;
+    });
+    if (nextSides.length !== sides.length) setSides(nextSides);
+
+    // 2) Menu items: pre-tax prices back-calculated from tax-inclusive
+    //    poster prices (÷1.05). Update price/structure if the item exists
+    //    (matched by name), otherwise add it fresh.
+    const upserts = [{
+      name: "Fried Chicken",
+      cat: "Mains",
+      price: 16.19,
+      allergens: ["gluten", "dairy"],
+      customGroups: [{
+        id: 9001,
+        label: "Choose your side",
+        required: true,
+        options: [{
+          name: "Fries",
+          price: 0,
+          sideId: sideId["Fries"]
+        }, {
+          name: "Rice & Peas",
+          price: 0,
+          sideId: sideId["Rice & Peas"]
+        }, {
+          name: "White Rice",
+          price: 0,
+          sideId: sideId["White Rice"]
+        }]
+      }],
+      sideIds: [sideId["Vegetable"]],
+      comesWith: ["Vegetable"]
+    }, {
+      name: "Jerk Chicken",
+      cat: "Mains",
+      price: 16.19,
+      allergens: ["gluten", "dairy", "eggs"],
+      customGroups: [{
+        id: 9002,
+        label: "Choose your side",
+        required: true,
+        options: [{
+          name: "Rice & Peas",
+          price: 0,
+          sideId: sideId["Rice & Peas"]
+        }, {
+          name: "White Rice",
+          price: 0,
+          sideId: sideId["White Rice"]
+        }, {
+          name: "Festival",
+          price: 0,
+          sideId: sideId["Festival"]
+        }]
+      }],
+      sideIds: [sideId["Vegetable"]],
+      comesWith: ["Vegetable (unless Festival chosen — check manually for now)"]
+    }, {
+      name: "Rasta Pasta",
+      cat: "Mains",
+      price: 19.05,
+      allergens: ["gluten", "dairy"],
+      customGroups: [{
+        id: 9003,
+        label: "Add a protein?",
+        required: true,
+        options: [{
+          name: "No protein",
+          price: 0
+        }, {
+          name: "Yes, add protein",
+          price: 3.00
+        }]
+      }]
+    }, {
+      name: "Curry Goat",
+      cat: "Mains",
+      price: 19.05,
+      allergens: []
+    }, {
+      name: "Oxtail",
+      cat: "Mains",
+      price: 20.00,
+      allergens: []
+    }, {
+      name: "Barbi-Fry Chicken",
+      cat: "Mains",
+      price: 15.24,
+      allergens: ["gluten", "soy"]
+    }, {
+      name: "Beef Patty",
+      cat: "Patties",
+      price: 5.71,
+      allergens: ["gluten", "dairy"]
+    }, {
+      name: "Curry Chicken Patty",
+      cat: "Patties",
+      price: 5.71,
+      allergens: ["gluten", "dairy"]
+    }, {
+      name: "Jerk Chicken Patty",
+      cat: "Patties",
+      price: 5.71,
+      allergens: ["gluten", "dairy"]
+    }, {
+      name: "Jamaican Fruit Cake (slice)",
+      cat: "Desserts",
+      price: 5.71,
+      allergens: ["gluten", "eggs", "tree nuts", "alcohol"]
+    }, {
+      name: "Totoe (slice)",
+      cat: "Desserts",
+      price: 4.76,
+      allergens: ["gluten", "coconut", "eggs"]
+    }, {
+      name: "Coffee",
+      cat: "Beverages",
+      price: 2.86,
+      allergens: ["dairy"]
+    }, {
+      name: "Pepsi",
+      cat: "Beverages",
+      price: 2.86,
+      allergens: []
+    }, {
+      name: "Coke",
+      cat: "Beverages",
+      price: 3.00,
+      allergens: []
+    }, {
+      name: "Carrot Juice",
+      cat: "Beverages",
+      price: 3.81,
+      allergens: []
+    }, {
+      name: "Mango Juice",
+      cat: "Beverages",
+      price: 3.00,
+      allergens: []
+    }, {
+      name: "Beetroot Juice",
+      cat: "Beverages",
+      price: 3.81,
+      allergens: [],
+      comesWith: ["With or without milk"]
+    }, {
+      name: "Vegetable Juice",
+      cat: "Beverages",
+      price: 3.00,
+      allergens: [],
+      comesWith: ["With or without milk"]
+    }, {
+      name: "Kids Fried Chicken",
+      cat: "Kids",
+      price: 12.00,
+      allergens: ["gluten"],
+      comesWith: ["1 pc Fried Chicken", "Fries"]
+    }, {
+      name: "Kids Hotdog",
+      cat: "Kids",
+      price: 9.00,
+      allergens: ["gluten", "soy"]
+    }, {
+      name: "Kids Beef Patty",
+      cat: "Kids",
+      price: 4.76,
+      allergens: ["gluten", "dairy"]
+    }, {
+      name: "Kids Jerk Chicken Patty",
+      cat: "Kids",
+      price: 4.76,
+      allergens: ["gluten", "dairy"]
+    }, {
+      name: "Kids Chicken Strips with Fries",
+      cat: "Kids",
+      price: 14.00,
+      allergens: ["gluten"]
+    }, {
+      name: "Salad (side)",
+      cat: "Sides",
+      price: 4.76,
+      allergens: []
+    }, {
+      name: "Rice & Peas (side)",
+      cat: "Sides",
+      price: 3.81,
+      allergens: []
+    }, {
+      name: "White Rice (side)",
+      cat: "Sides",
+      price: 2.86,
+      allergens: []
+    }, {
+      name: "Fries (side)",
+      cat: "Sides",
+      price: 3.81,
+      allergens: ["gluten"]
+    }, {
+      name: "Festival (side, 3pc)",
+      cat: "Sides",
+      price: 5.71,
+      allergens: ["gluten"]
+    }];
+    let nextMenu = [...menu];
+    upserts.forEach(item => {
+      const idx = nextMenu.findIndex(m => m.name.toLowerCase() === item.name.toLowerCase());
+      const base = {
+        available: true,
+        comesWith: item.comesWith || [],
+        customGroups: item.customGroups || []
+      };
+      if (idx >= 0) {
+        nextMenu[idx] = {
+          ...nextMenu[idx],
+          ...base,
+          price: item.price,
+          cat: item.cat,
+          allergens: item.allergens
+        };
+      } else {
+        nextMenu = [...nextMenu, {
+          ...base,
+          id: Date.now() + Math.floor(Math.random() * 100000),
+          name: item.name,
+          cat: item.cat,
+          price: item.price,
+          allergens: item.allergens
+        }];
+      }
+    });
+    setMenu(nextMenu);
+    setMenuMigV1(true);
+  }, [menu.length, menuMigV1]);
+
+  // v2 fix: Vegetable travels with the RICE side, not the protein/dish.
+  // Fried Chicken's poster wording bundles Vegetable with all 3 of its
+  // side choices (Fries, Rice & Peas, White Rice). Jerk Chicken only
+  // bundles Vegetable with its two rice options — Festival does not
+  // include it. This replaces the old single-sideId links with the new
+  // sideIds array so each option can carry its own bundled extra.
+  useEffect(() => {
+    if (!menuMigV1 || menuMigV2) return;
+    if (menu.length === 0 || sides.length === 0) return;
+    const findSide = name => (sides.find(s => s.name.toLowerCase() === name.toLowerCase()) || {}).id;
+    const vegId = findSide("Vegetable"),
+      friesId = findSide("Fries"),
+      riceNPeasId = findSide("Rice & Peas"),
+      whiteRiceId = findSide("White Rice"),
+      festivalId = findSide("Festival");
+    if (!vegId) return; // sides not ready yet
+
+    const nextMenu = menu.map(item => {
+      if (item.name.toLowerCase() === "fried chicken") {
+        return {
+          ...item,
+          customGroups: [{
+            id: 9001,
+            label: "Choose your side",
+            required: true,
+            options: [{
+              name: "Fries",
+              price: 0,
+              sideIds: [friesId, vegId]
+            }, {
+              name: "Rice & Peas",
+              price: 0,
+              sideIds: [riceNPeasId, vegId]
+            }, {
+              name: "White Rice",
+              price: 0,
+              sideIds: [whiteRiceId, vegId]
+            }]
+          }]
+        };
+      }
+      if (item.name.toLowerCase() === "jerk chicken") {
+        return {
+          ...item,
+          customGroups: [{
+            id: 9002,
+            label: "Choose your side",
+            required: true,
+            options: [{
+              name: "Rice & Peas",
+              price: 0,
+              sideIds: [riceNPeasId, vegId]
+            }, {
+              name: "White Rice",
+              price: 0,
+              sideIds: [whiteRiceId, vegId]
+            }, {
+              name: "Festival",
+              price: 0,
+              sideIds: [festivalId]
+            }]
+          }]
+        };
+      }
+      return item;
+    });
+    setMenu(nextMenu);
+    setMenuMigV2(true);
+  }, [menuMigV1, menuMigV2, menu.length, sides.length]);
   const newOrderCount = kitchenOrders.filter(o => o.status === "new").length;
   const readyOrderCount = kitchenOrders.filter(o => o.status === "ready").length;
   return /*#__PURE__*/React.createElement("div", {
@@ -10800,6 +11608,10 @@ function App() {
     menu: menu,
     recipes: recipes,
     setRecipes: setRecipes,
+    proteins: proteins,
+    setProteins: setProteins,
+    sides: sides,
+    setSides: setSides,
     canSeeRecipes: canSeeRecipes,
     countLog: countLog,
     setCountLog: setCountLog
@@ -10856,7 +11668,9 @@ function App() {
     menu: menu,
     setMenu: setMenu,
     positions: positions,
-    setPositions: setPositions
+    setPositions: setPositions,
+    proteins: proteins,
+    sides: sides
   })));
 }
 try {
