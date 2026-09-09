@@ -9742,6 +9742,8 @@ function SettingsTab({
   const [addingOptFor, setAddingOptFor] = useState(null); // groupId
   const [newOptSideIds, setNewOptSideIds] = useState([]);
   const [menuProteinAddMode, setMenuProteinAddMode] = useState(false);
+  const [pendingProteinOpt, setPendingProteinOpt] = useState(null); // {gid, protein}
+  const [pendingProteinPrice, setPendingProteinPrice] = useState("");
   const [menuNewProteinName, setMenuNewProteinName] = useState("");
   const [newOptProteinId, setNewOptProteinId] = useState("");
   const MENU_CATS = ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"];
@@ -9837,14 +9839,28 @@ function SettingsTab({
     } : g));
   };
   const quickAddProteinOption = (gid, protein) => {
+    setPendingProteinOpt({
+      gid,
+      protein
+    });
+    setPendingProteinPrice("");
+  };
+  const confirmProteinOption = () => {
+    if (!pendingProteinOpt) return;
+    const {
+      gid,
+      protein
+    } = pendingProteinOpt;
     setCustGroups(custGroups.map(g => g.id === gid ? {
       ...g,
       options: [...g.options, {
         name: protein.name,
-        price: 0,
+        price: parseFloat(pendingProteinPrice) || 0,
         proteinId: protein.id
       }]
     } : g));
+    setPendingProteinOpt(null);
+    setPendingProteinPrice("");
   };
   const removeOption = (gid, oname) => setCustGroups(custGroups.map(g => g.id === gid ? {
     ...g,
@@ -10264,7 +10280,39 @@ function SettingsTab({
       fontSize: 11,
       color: C.gray
     }
-  }, "No sides or proteins yet — add some under Settings → Sides & Proteins")), addingOptFor === group.id ? /*#__PURE__*/React.createElement("div", {
+  }, "No sides or proteins yet — add some under Settings → Sides & Proteins")), pendingProteinOpt && pendingProteinOpt.gid === group.id && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      border: "1px solid " + C.gold,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 8,
+      display: "flex",
+      gap: 8,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700
+    }
+  }, pendingProteinOpt.protein.name, " — extra charge for this choice:"), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: pendingProteinPrice,
+    onChange: setPendingProteinPrice,
+    placeholder: "0.00",
+    style: {
+      width: 90
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: confirmProteinOption
+  }, "Add"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => setPendingProteinOpt(null),
+    color: C.charcoal,
+    outline: true
+  }, "Cancel")), addingOptFor === group.id ? /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.cream,
       borderRadius: 8,
