@@ -7882,14 +7882,22 @@ function EODTab({
   // no separate folding here anymore.
   const dayCatPmts = (cateringEvents || []).flatMap(e => (e.payments || []).filter(p => p.date === selDate));
   const catPmtTotal = dayCatPmts.reduce((s, p) => s + p.amount, 0);
-  const posCash = paidDay.filter(s => s.payMethod === "Cash").reduce((s, x) => s + x.total, 0) + dayCatPmts.filter(p => p.method === "Cash").reduce((s, p) => s + p.amount, 0);
-  const posCard = paidDay.filter(s => s.payMethod === "Card Machine").reduce((s, x) => s + x.total, 0) + dayCatPmts.filter(p => p.method === "Card Machine").reduce((s, p) => s + p.amount, 0);
-  const posTransf = paidDay.filter(s => s.payMethod === "Transfer").reduce((s, x) => s + x.total, 0) + dayCatPmts.filter(p => p.method === "Transfer").reduce((s, p) => s + p.amount, 0);
+
+  // A refund pays real money back out of whichever method it was actually
+  // given through (Cash out of the drawer, Card Reversal off the card
+  // batch, Transfer sent back) — so it has to come out of that exact
+  // bucket, not just off the grand total, or the physical count you're
+  // comparing against will never match what really happened.
+  const refundByMethod = method => dayRefunds.filter(r => r.payMethod === method).reduce((s, r) => s + r.amount, 0);
+  const posCash = paidDay.filter(s => s.payMethod === "Cash").reduce((s, x) => s + x.total, 0) + dayCatPmts.filter(p => p.method === "Cash").reduce((s, p) => s + p.amount, 0) - refundByMethod("Cash");
+  const posCard = paidDay.filter(s => s.payMethod === "Card Machine").reduce((s, x) => s + x.total, 0) + dayCatPmts.filter(p => p.method === "Card Machine").reduce((s, p) => s + p.amount, 0) - refundByMethod("Card Reversal");
+  const posTransf = paidDay.filter(s => s.payMethod === "Transfer").reduce((s, x) => s + x.total, 0) + dayCatPmts.filter(p => p.method === "Transfer").reduce((s, p) => s + p.amount, 0) - refundByMethod("Transfer");
   const posTotal = posCash + posCard + posTransf;
   const posGST = paidDay.reduce((s, x) => s + x.gst, 0);
   const posPST = paidDay.reduce((s, x) => s + x.pst, 0);
   const refundTotal = dayRefunds.reduce((s, r) => s + r.amount, 0);
-  const netRevenue = posTotal - refundTotal;
+  const netRevenue = posTotal; // refunds are already subtracted out above, per method
+
   const cashVar = parseFloat(cashCounted || 0) - posCash;
   const cardVar = parseFloat(cardTotal || 0) - posCard;
   const balanced = Math.abs(cashVar) < 0.05 && Math.abs(cardVar) < 0.05;
