@@ -205,7 +205,8 @@ const DEFAULT_SETTINGS = {
     11: 15456,
     12: 15400
   },
-  expenseCategories: ["Lease", "Insurance", "Food & Inventory", "Supplies", "Marketing", "Utilities", "Staff Wages", "Licensing", "Other"]
+  expenseCategories: ["Lease", "Insurance", "Food & Inventory", "Supplies", "Marketing", "Utilities", "Staff Wages", "Licensing", "Other"],
+  menuCategories: ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"]
 };
 const MENU_INIT = [
 // Breakfast
@@ -1202,6 +1203,10 @@ const PERMISSIONS = [
   label: "Recipe Mapping (confidential)",
   group: "Tab Access"
 }, {
+  key: "accessMenu",
+  label: "Menu (owners & managers)",
+  group: "Tab Access"
+}, {
   key: "accessExpenses",
   label: "Expenses",
   group: "Tab Access"
@@ -1252,6 +1257,7 @@ const POSITIONS_INIT = [{
     accessPOS: true,
     accessInventory: true,
     accessRecipes: true,
+    accessMenu: true,
     accessExpenses: true,
     accessStaff: true,
     accessCatering: true,
@@ -1271,6 +1277,7 @@ const POSITIONS_INIT = [{
     accessPOS: true,
     accessInventory: true,
     accessRecipes: false,
+    accessMenu: true,
     accessExpenses: true,
     accessStaff: false,
     accessCatering: true,
@@ -1678,12 +1685,14 @@ function CustomizeModal({
     // Find which chosen option (if any) is linked to a Side or Protein
     // component, so inventory deducts the right recipe.
     let chosenSideIds = [],
+      chosenPackagingIds = [],
       chosenProteinId = null;
     groups.forEach(g => {
       const chosenName = selections[g.id];
       const chosenOpt = g.options.find(o => o.name === chosenName);
       if (chosenOpt) {
         if (chosenOpt.sideIds && chosenOpt.sideIds.length) chosenSideIds = [...chosenSideIds, ...chosenOpt.sideIds];
+        if (chosenOpt.packagingIds && chosenOpt.packagingIds.length) chosenPackagingIds = [...chosenPackagingIds, ...chosenOpt.packagingIds];
         if (chosenOpt.proteinId) chosenProteinId = chosenOpt.proteinId;
       }
     });
@@ -1692,6 +1701,7 @@ function CustomizeModal({
       price: item.price + extraPrice,
       customization: note || null,
       chosenSideIds,
+      chosenPackagingIds,
       chosenProteinId
     });
   };
@@ -3221,7 +3231,7 @@ function InventoryTab({
       gap: 8,
       marginBottom: 18
     }
-  }, [["stock", "Stock Levels"], ["count", "Stock Count"], ...(canSeeRecipes ? [["recipes", "Recipe Mapping"], ["components", "Proteins & Sides"]] : [])].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["stock", "Stock Levels"], ["count", "Stock Count"], ["received", "Receiving History"], ...(canSeeRecipes ? [["recipes", "Recipe Mapping"], ["components", "Proteins & Sides"]] : [])].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
     key: k,
     onClick: () => setSection(k),
     style: {
@@ -3497,7 +3507,7 @@ function InventoryTab({
     style: {
       background: C.green
     }
-  }, ["Item", "Cat", "Stock", "Servings Available", ""].map(h => /*#__PURE__*/React.createElement("th", {
+  }, ["Item", "Cat", "Stock", "Avg Cost", "Servings Available", ""].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: {
       color: C.white,
@@ -3570,6 +3580,12 @@ function InventoryTab({
         fontSize: 10
       }
     }, "[low]"))), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "9px 12px",
+        fontWeight: 700,
+        color: item.avgCost ? C.green : C.gray
+      }
+    }, item.avgCost ? fmt(item.avgCost) + "/" + item.unit : "not set"), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "9px 12px",
         fontSize: 11
@@ -3831,7 +3847,82 @@ function InventoryTab({
       color: a.diff > 0 ? C.blue : C.red,
       fontWeight: 700
     }
-  }, a.diff > 0 ? "+" : "", a.diff.toFixed(2), " ", a.unit))))))), section === "recipes" && canSeeRecipes && /*#__PURE__*/React.createElement("div", null, editRecipeId && /*#__PURE__*/React.createElement("div", {
+  }, a.diff > 0 ? "+" : "", a.diff.toFixed(2), " ", a.unit))))))), section === "received" && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "12px 14px",
+      fontSize: 12,
+      color: C.charcoal,
+      background: C.lightGold
+    }
+  }, "Every delivery you've logged with \"+ Receive\", most recent first — including which supplier and what price you paid, so you can always look back and confirm it went in."), /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: C.green
+    }
+  }, ["Date", "Time", "Item", "Qty", "Supplier", "Price/Unit", "New Avg Cost"].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      color: C.white,
+      padding: "9px 12px",
+      textAlign: "left",
+      fontSize: 12
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, receiveLog.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: 7,
+    style: {
+      padding: 20,
+      textAlign: "center",
+      color: C.gray
+    }
+  }, "No deliveries logged yet.")) : [...receiveLog].sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time)).map((r, i) => /*#__PURE__*/React.createElement("tr", {
+    key: r.id,
+    style: {
+      background: i % 2 === 0 ? C.white : C.cream,
+      borderBottom: "1px solid " + C.border
+    }
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px"
+    }
+  }, r.date), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px",
+      color: C.charcoal
+    }
+  }, r.time), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px",
+      fontWeight: 600
+    }
+  }, r.itemName), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px"
+    }
+  }, r.qty), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px"
+    }
+  }, r.supplier || "--"), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px",
+      fontWeight: 700,
+      color: C.green
+    }
+  }, fmt(r.price)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px"
+    }
+  }, fmt(r.newAvgCost))))))), section === "recipes" && canSeeRecipes && /*#__PURE__*/React.createElement("div", null, editRecipeId && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       top: 0,
@@ -4320,11 +4411,21 @@ function InventoryTab({
       const oldStock = item.stock || 0,
         oldCost = item.avgCost || price;
       const newAvg = (oldStock * oldCost + qty * price) / (oldStock + qty);
-      setInventory(inventory.map(i => i.id === item.id ? {
-        ...i,
-        stock: oldStock + qty,
-        avgCost: parseFloat(newAvg.toFixed(4))
-      } : i));
+      setInventory(inventory.map(i => {
+        if (i.id !== item.id) return i;
+        // Also record this supplier's price in the per-supplier comparison
+        // table (the one "Edit" shows), so receiving and editing stay in sync.
+        const newPrices = {
+          ...(i.prices || {})
+        };
+        if (receiveForm.supplier) newPrices[receiveForm.supplier] = price;
+        return {
+          ...i,
+          stock: oldStock + qty,
+          avgCost: parseFloat(newAvg.toFixed(4)),
+          prices: newPrices
+        };
+      }));
       setReceiveLog(prev => [...prev, {
         id: Date.now(),
         date: today(),
@@ -9514,7 +9615,7 @@ function ReportsTab({
       marginBottom: 16,
       fontSize: 13
     }
-  }, "Cost calculations use your best (lowest) supplier price per ingredient. Make sure recipes and supplier prices are up to date in Inventory for accurate results."), /*#__PURE__*/React.createElement(Card, {
+  }, "Cost calculations use each ingredient's real average cost (blended across every delivery you've received) — the same number shown as \"Avg Cost\" in Inventory. If a \"Cost to Make\" shows an orange warning, one or more ingredients in that recipe don't have a cost set yet, so the true cost is higher than shown."), /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 0,
       overflow: "hidden",
@@ -9540,12 +9641,14 @@ function ReportsTab({
     }
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, (menu || []).filter(m => m.available).map((item, i) => {
     const recipe = recipes[item.id] || [];
+    let missingCost = false;
     const cost = recipe.reduce((s, ing) => {
       const inv = (inventory || []).find(x => x.id === ing.invId);
-      if (!inv) return s;
-      const prices = Object.values(inv.prices || {});
-      if (!prices.length) return s;
-      return s + Math.min(...prices) * ing.qty;
+      if (!inv || !inv.avgCost) {
+        missingCost = true;
+        return s;
+      }
+      return s + inv.avgCost * ing.qty;
     }, 0);
     const margin = item.price - cost;
     const marginPct = item.price > 0 ? margin / item.price * 100 : 0;
@@ -9578,7 +9681,16 @@ function ReportsTab({
         padding: "8px 10px",
         color: cost === 0 ? C.gray : C.charcoal
       }
-    }, cost === 0 ? "No recipe" : fmt(cost)), /*#__PURE__*/React.createElement("td", {
+    }, recipe.length === 0 ? "No recipe" : /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 5
+      }
+    }, fmt(cost), missingCost && /*#__PURE__*/React.createElement(Badge, {
+      small: true,
+      color: C.orange
+    }, "incomplete"))), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "8px 10px",
         fontWeight: 700,
@@ -10072,7 +10184,10 @@ function SettingsTab({
   const [pendingProteinPrice, setPendingProteinPrice] = useState("");
   const [menuNewProteinName, setMenuNewProteinName] = useState("");
   const [newOptProteinId, setNewOptProteinId] = useState("");
-  const MENU_CATS = ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"];
+  const MENU_CATS = settings.menuCategories || ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"];
+  const [newCatName, setNewCatName] = useState("");
+  const [renamingCat, setRenamingCat] = useState(null);
+  const [renameCatVal, setRenameCatVal] = useState("");
   const addMenuItem = () => {
     if (!menuForm.name || !menuForm.price) return;
     const allergens = menuForm.allergens ? menuForm.allergens.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -11589,6 +11704,10 @@ const TABS = [{
   icon: "&#x1F373;",
   label: "Kitchen"
 }, {
+  key: "menu",
+  icon: "&#x1F4D6;",
+  label: "Menu"
+}, {
   key: "inventory",
   icon: "&#x1F4E6;",
   label: "Inventory"
@@ -11621,6 +11740,1525 @@ const TABS = [{
   icon: "&#x2699;",
   label: "Settings"
 }];
+function MenuTab({
+  menu,
+  setMenu,
+  recipes,
+  setRecipes,
+  proteins,
+  setProteins,
+  sides,
+  setSides,
+  packaging,
+  setPackaging,
+  inventory,
+  settings,
+  setSettings
+}) {
+  const [menuView, setMenuView] = useState("items");
+  const [expandedItemId, setExpandedItemId] = useState(null);
+  const [menuForm, setMenuForm] = useState({
+    name: "",
+    cat: "Beverages",
+    price: "",
+    allergens: "",
+    available: true,
+    comesWith: "",
+    customGroups: [],
+    proteinId: "",
+    sideIds: [],
+    packagingIds: []
+  });
+  const [editingMenuId, setEditingMenuId] = useState(null);
+  const [custItemId, setCustItemId] = useState(null);
+  const [custGroups, setCustGroups] = useState([]);
+  const [newGroupLabel, setNewGroupLabel] = useState("");
+  const [newGroupReq, setNewGroupReq] = useState(true);
+  const [newOptName, setNewOptName] = useState("");
+  const [newOptPrice, setNewOptPrice] = useState("0");
+  const [addingOptFor, setAddingOptFor] = useState(null);
+  const [newOptSideIds, setNewOptSideIds] = useState([]);
+  const [menuProteinAddMode, setMenuProteinAddMode] = useState(false);
+  const [pendingProteinOpt, setPendingProteinOpt] = useState(null);
+  const [pendingProteinPrice, setPendingProteinPrice] = useState("");
+  const [menuNewProteinName, setMenuNewProteinName] = useState("");
+  const [newOptProteinId, setNewOptProteinId] = useState("");
+  const [editRecipeId, setEditRecipeId] = useState(null);
+  const [recipeLines, setRecipeLines] = useState([]);
+  const [editCompId, setEditCompId] = useState(null); // {type:"protein"|"side"|"packaging", id}
+  const [compLines, setCompLines] = useState([]);
+  const [newCompName, setNewCompName] = useState("");
+  const [newCompType, setNewCompType] = useState("protein");
+  const MENU_CATS = settings.menuCategories || ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"];
+  const [newCatName, setNewCatName] = useState("");
+  const [renamingCat, setRenamingCat] = useState(null);
+  const [renameCatVal, setRenameCatVal] = useState("");
+  const compListFor = type => type === "protein" ? proteins : type === "side" ? sides : packaging;
+  const setCompListFor = type => type === "protein" ? setProteins : type === "side" ? setSides : setPackaging;
+  const addMenuItem = () => {
+    if (!menuForm.name || !menuForm.price) return;
+    const allergens = menuForm.allergens ? menuForm.allergens.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const comesWith = menuForm.comesWith ? menuForm.comesWith.split(',').map(s => s.trim()).filter(Boolean) : [];
+    if (editingMenuId) {
+      setMenu(menu.map(m => m.id === editingMenuId ? {
+        ...m,
+        ...menuForm,
+        price: parseFloat(menuForm.price),
+        allergens,
+        comesWith
+      } : m));
+      setEditingMenuId(null);
+    } else {
+      setMenu([...menu, {
+        ...menuForm,
+        id: Date.now(),
+        price: parseFloat(menuForm.price),
+        allergens,
+        comesWith,
+        customGroups: []
+      }]);
+    }
+    setMenuForm({
+      name: '',
+      cat: 'Beverages',
+      price: '',
+      allergens: '',
+      available: true,
+      comesWith: '',
+      customGroups: [],
+      proteinId: '',
+      sideIds: [],
+      packagingIds: []
+    });
+  };
+  const openCustEditor = item => {
+    setCustItemId(item.id);
+    setCustGroups(JSON.parse(JSON.stringify(item.customGroups || [])));
+    setNewGroupLabel("");
+    setNewGroupReq(true);
+  };
+  const saveCustGroups = () => {
+    setMenu(menu.map(m => m.id === custItemId ? {
+      ...m,
+      customGroups: custGroups
+    } : m));
+    setCustItemId(null);
+  };
+  const addGroup = () => {
+    if (!newGroupLabel.trim()) return;
+    setCustGroups([...custGroups, {
+      id: Date.now(),
+      label: newGroupLabel.trim(),
+      required: newGroupReq,
+      options: []
+    }]);
+    setNewGroupLabel("");
+    setNewGroupReq(true);
+  };
+  const removeGroup = gid => setCustGroups(custGroups.filter(g => g.id !== gid));
+  const addOption = gid => {
+    if (!newOptName.trim()) return;
+    const opt = {
+      name: newOptName.trim(),
+      price: parseFloat(newOptPrice) || 0
+    };
+    if (newOptSideIds.length > 0) opt.sideIds = newOptSideIds.map(id => parseInt(id));
+    if (newOptProteinId) opt.proteinId = parseInt(newOptProteinId);
+    setCustGroups(custGroups.map(g => g.id === gid ? {
+      ...g,
+      options: [...g.options, opt]
+    } : g));
+    setNewOptName("");
+    setNewOptPrice("0");
+    setNewOptSideIds([]);
+    setNewOptProteinId("");
+    setAddingOptFor(null);
+  };
+  const quickAddSideOption = (gid, side) => {
+    setCustGroups(custGroups.map(g => g.id === gid ? {
+      ...g,
+      options: [...g.options, {
+        name: side.name,
+        price: 0,
+        sideIds: [side.id]
+      }]
+    } : g));
+  };
+  const quickAddPackagingOption = (gid, pkg) => {
+    setCustGroups(custGroups.map(g => g.id === gid ? {
+      ...g,
+      options: [...g.options, {
+        name: pkg.name,
+        price: 0,
+        packagingIds: [pkg.id]
+      }]
+    } : g));
+  };
+  const quickAddProteinOption = (gid, protein) => {
+    setPendingProteinOpt({
+      gid,
+      protein
+    });
+    setPendingProteinPrice("");
+  };
+  const confirmProteinOption = () => {
+    if (!pendingProteinOpt) return;
+    const {
+      gid,
+      protein
+    } = pendingProteinOpt;
+    setCustGroups(custGroups.map(g => g.id === gid ? {
+      ...g,
+      options: [...g.options, {
+        name: protein.name,
+        price: parseFloat(pendingProteinPrice) || 0,
+        proteinId: protein.id
+      }]
+    } : g));
+    setPendingProteinOpt(null);
+    setPendingProteinPrice("");
+  };
+  const removeOption = (gid, oname) => setCustGroups(custGroups.map(g => g.id === gid ? {
+    ...g,
+    options: g.options.filter(o => o.name !== oname)
+  } : g));
+  const getCanMake = menuItemId => {
+    const recipe = recipes[menuItemId] || [];
+    if (!recipe.length) return null;
+    let min = Infinity,
+      bottleneck = "";
+    recipe.forEach(ing => {
+      const inv = inventory.find(i => i.id === ing.invId);
+      if (!inv || ing.qty <= 0) return;
+      const s = Math.floor(inv.stock / ing.qty);
+      if (s < min) {
+        min = s;
+        bottleneck = inv.name;
+      }
+    });
+    return min === Infinity ? null : {
+      can: min,
+      bottleneck
+    };
+  };
+  const openRecipe = item => {
+    setEditRecipeId(item.id);
+    setRecipeLines([...(recipes[item.id] || [])].map(r => ({
+      ...r
+    })));
+  };
+  const saveRecipe = () => {
+    setRecipes({
+      ...recipes,
+      [editRecipeId]: recipeLines.filter(r => r.invId && r.qty > 0)
+    });
+    setEditRecipeId(null);
+  };
+  const addRecipeLine = () => setRecipeLines([...recipeLines, {
+    invId: "",
+    qty: ""
+  }]);
+  const updateLine = (idx, field, val) => setRecipeLines(recipeLines.map((r, i) => i === idx ? {
+    ...r,
+    [field]: field === "qty" ? val : parseInt(val) || ""
+  } : r));
+  const removeLine = idx => setRecipeLines(recipeLines.filter((_, i) => i !== idx));
+  const addComponent = () => {
+    if (!newCompName.trim()) return;
+    const list = compListFor(newCompType),
+      setList = setCompListFor(newCompType);
+    setList([...list, {
+      id: Date.now(),
+      name: newCompName.trim(),
+      recipe: []
+    }]);
+    setNewCompName("");
+  };
+  const deleteComponent = (type, id) => {
+    if (!window.confirm("Delete this " + type + "? Menu items linking to it will need a new selection.")) return;
+    setCompListFor(type)(compListFor(type).filter(c => c.id !== id));
+  };
+  const openComponentRecipe = (type, comp) => {
+    setEditCompId({
+      type,
+      id: comp.id
+    });
+    setCompLines([...(comp.recipe || [])].map(r => ({
+      ...r
+    })));
+  };
+  const saveComponentRecipe = () => {
+    const cleanLines = compLines.filter(r => r.invId && r.qty > 0);
+    setCompListFor(editCompId.type)(compListFor(editCompId.type).map(c => c.id === editCompId.id ? {
+      ...c,
+      recipe: cleanLines
+    } : c));
+    setEditCompId(null);
+  };
+  const addCompLine = () => setCompLines([...compLines, {
+    invId: "",
+    qty: ""
+  }]);
+  const updateCompLine = (idx, field, val) => setCompLines(compLines.map((r, i) => i === idx ? {
+    ...r,
+    [field]: field === "qty" ? val : parseInt(val) || ""
+  } : r));
+  const removeCompLine = idx => setCompLines(compLines.filter((_, i) => i !== idx));
+  const componentCost = comp => (comp.recipe || []).reduce((s, r) => {
+    const ing = inventory.find(i => i.id === r.invId);
+    return s + (ing && ing.avgCost ? ing.avgCost * r.qty : 0);
+  }, 0);
+
+  // Full breakdown for one menu item: base recipe + its default protein +
+  // its default sides + its default packaging, each ingredient line shown
+  // with cost, plus a grand total — this is the "click and see everything"
+  // view, computed live from the exact same data Cost Analysis uses.
+  const itemBreakdown = item => {
+    const lines = [];
+    let missing = false;
+    const addLine = (label, invId, qty) => {
+      const inv = inventory.find(i => i.id === invId);
+      if (!inv) return;
+      if (!inv.avgCost) missing = true;
+      lines.push({
+        label,
+        ingredient: inv.name,
+        qty,
+        unit: inv.unit,
+        unitCost: inv.avgCost || 0,
+        lineCost: (inv.avgCost || 0) * qty
+      });
+    };
+    (recipes[item.id] || []).forEach(ing => addLine("Base", ing.invId, ing.qty));
+    if (item.proteinId) {
+      const prot = proteins.find(p => p.id === item.proteinId);
+      if (prot) (prot.recipe || []).forEach(ing => addLine("Protein: " + prot.name, ing.invId, ing.qty));
+    }
+    (item.sideIds || []).forEach(sid => {
+      const side = sides.find(s => s.id === sid);
+      if (side) (side.recipe || []).forEach(ing => addLine("Side: " + side.name, ing.invId, ing.qty));
+    });
+    (item.packagingIds || []).forEach(pid => {
+      const pkg = packaging.find(p => p.id === pid);
+      if (pkg) (pkg.recipe || []).forEach(ing => addLine("Packaging: " + pkg.name, ing.invId, ing.qty));
+    });
+    const total = lines.reduce((s, l) => s + l.lineCost, 0);
+    return {
+      lines,
+      total,
+      missing
+    };
+  };
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 18
+    }
+  }, [["items", "Menu Items"], ["components", "Proteins, Sides & Packaging"]].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
+    key: k,
+    onClick: () => setMenuView(k),
+    style: {
+      background: menuView === k ? C.green : "transparent",
+      color: menuView === k ? C.white : C.charcoal,
+      border: "2px solid " + (menuView === k ? C.green : C.border),
+      borderRadius: 8,
+      padding: "8px 18px",
+      fontSize: 13,
+      cursor: "pointer",
+      fontFamily: "inherit",
+      fontWeight: 700
+    }
+  }, l))), menuView === "items" && /*#__PURE__*/React.createElement("div", null, custItemId && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: "rgba(0,0,0,0.7)",
+      zIndex: 900,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      width: 560,
+      maxHeight: "88vh",
+      overflow: "auto",
+      border: "2px solid " + C.gold
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Side Choices for: ", (menu.find(m => m.id === custItemId) || {}).name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 14,
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, "Add choice groups customers see when ordering this item (e.g. \"Choose your starch\"). Each group has options the customer picks from. Options can have an extra charge."), custGroups.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: 20,
+      color: C.gray,
+      fontSize: 13
+    }
+  }, "No choice groups yet. Add one below."), custGroups.map(group => /*#__PURE__*/React.createElement(Card, {
+    key: group.id,
+    style: {
+      marginBottom: 12,
+      background: C.cream,
+      border: "1px solid " + C.border
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      fontSize: 14
+    }
+  }, group.label), /*#__PURE__*/React.createElement(Badge, {
+    small: true,
+    color: group.required ? C.green : C.gray,
+    style: {
+      marginLeft: 8
+    }
+  }, group.required ? "Required" : "Optional")), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => removeGroup(group.id),
+    color: C.red,
+    outline: true
+  }, "Remove Group")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6,
+      marginBottom: 8
+    }
+  }, group.options.map(opt => /*#__PURE__*/React.createElement("div", {
+    key: opt.name,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      background: C.white,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "4px 10px",
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("span", null, opt.name, opt.price > 0 ? " (+" + fmt(opt.price) + ")" : ""), (opt.sideIds || []).map(sid => /*#__PURE__*/React.createElement(Badge, {
+    key: "s" + sid,
+    small: true,
+    color: C.teal
+  }, (sides.find(s => s.id === sid) || {}).name || "side")), (opt.packagingIds || []).map(pid => /*#__PURE__*/React.createElement(Badge, {
+    key: "p" + pid,
+    small: true,
+    color: C.purple
+  }, (packaging.find(p => p.id === pid) || {}).name || "packaging")), opt.proteinId && /*#__PURE__*/React.createElement(Badge, {
+    small: true,
+    color: C.orange
+  }, (proteins.find(p => p.id === opt.proteinId) || {}).name || "protein"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => removeOption(group.id, opt.name),
+    style: {
+      background: "none",
+      border: "none",
+      color: C.red,
+      cursor: "pointer",
+      fontWeight: 700,
+      fontSize: 13,
+      lineHeight: 1
+    }
+  }, "x")))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 6
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      marginBottom: 4
+    }
+  }, "Tap a side, packaging, or protein to add it as a choice — nothing to type:"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6,
+      marginBottom: 8
+    }
+  }, (sides || []).map(s => {
+    const already = group.options.some(o => o.name === s.name);
+    return /*#__PURE__*/React.createElement("button", {
+      key: "s" + s.id,
+      disabled: already,
+      onClick: () => quickAddSideOption(group.id, s),
+      style: {
+        background: already ? C.cream : C.white,
+        border: "1px solid " + (already ? C.border : C.teal),
+        color: already ? C.gray : C.teal,
+        borderRadius: 6,
+        padding: "5px 10px",
+        fontSize: 12,
+        cursor: already ? "default" : "pointer",
+        fontFamily: "inherit"
+      }
+    }, already ? "✓ " : "+ ", s.name);
+  }), (packaging || []).map(pk => {
+    const already = group.options.some(o => o.name === pk.name);
+    return /*#__PURE__*/React.createElement("button", {
+      key: "pk" + pk.id,
+      disabled: already,
+      onClick: () => quickAddPackagingOption(group.id, pk),
+      style: {
+        background: already ? C.cream : C.white,
+        border: "1px solid " + (already ? C.border : C.purple),
+        color: already ? C.gray : C.purple,
+        borderRadius: 6,
+        padding: "5px 10px",
+        fontSize: 12,
+        cursor: already ? "default" : "pointer",
+        fontFamily: "inherit"
+      }
+    }, already ? "✓ " : "+ ", pk.name);
+  }), (proteins || []).map(p => {
+    const already = group.options.some(o => o.name === p.name);
+    return /*#__PURE__*/React.createElement("button", {
+      key: "p" + p.id,
+      disabled: already,
+      onClick: () => quickAddProteinOption(group.id, p),
+      style: {
+        background: already ? C.cream : C.white,
+        border: "1px solid " + (already ? C.border : C.orange),
+        color: already ? C.gray : C.orange,
+        borderRadius: 6,
+        padding: "5px 10px",
+        fontSize: 12,
+        cursor: already ? "default" : "pointer",
+        fontFamily: "inherit"
+      }
+    }, already ? "✓ " : "+ ", p.name);
+  }), (sides || []).length === 0 && (proteins || []).length === 0 && (packaging || []).length === 0 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: C.gray
+    }
+  }, "No sides, proteins, or packaging yet — add some under \"Proteins, Sides & Packaging\" above.")), pendingProteinOpt && pendingProteinOpt.gid === group.id && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      border: "1px solid " + C.gold,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 8,
+      display: "flex",
+      gap: 8,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 700
+    }
+  }, pendingProteinOpt.protein.name, " — extra charge for this choice:"), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: pendingProteinPrice,
+    onChange: setPendingProteinPrice,
+    placeholder: "0.00",
+    style: {
+      width: 90
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: confirmProteinOption
+  }, "Add"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => setPendingProteinOpt(null),
+    color: C.charcoal,
+    outline: true
+  }, "Cancel")), addingOptFor === group.id ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.cream,
+      borderRadius: 8,
+      padding: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      marginBottom: 6
+    }
+  }, "For a choice that isn't a real ingredient (e.g. \"No thanks\"):"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    value: newOptName,
+    onChange: setNewOptName,
+    placeholder: "Option name",
+    style: {
+      flex: 2
+    }
+  }), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: newOptPrice,
+    onChange: setNewOptPrice,
+    placeholder: "Extra $",
+    style: {
+      width: 80
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => addOption(group.id)
+  }, "Add"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => setAddingOptFor(null),
+    color: C.charcoal,
+    outline: true
+  }, "Cancel"))) : /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => {
+      setAddingOptFor(group.id);
+      setNewOptName("");
+      setNewOptPrice("0");
+    },
+    color: C.charcoal,
+    outline: true
+  }, "+ Add a non-ingredient choice")))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    value: newGroupLabel,
+    onChange: setNewGroupLabel,
+    placeholder: "New group label, e.g. \"Choose your starch\"",
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement(Sel, {
+    value: newGroupReq ? "required" : "optional",
+    onChange: v => setNewGroupReq(v === "required"),
+    options: ["required", "optional"],
+    style: {
+      width: 110
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: addGroup
+  }, "+ Add Group")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: saveCustGroups,
+    style: {
+      flex: 1
+    }
+  }, "Save & Close"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setCustItemId(null),
+    color: C.charcoal,
+    outline: true
+  }, "Cancel")))), editRecipeId && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: "rgba(0,0,0,0.65)",
+      zIndex: 900,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      width: 520,
+      maxHeight: "80vh",
+      overflow: "auto",
+      border: "2px solid " + C.gold
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Base Recipe: ", (menu.find(m => m.id === editRecipeId) || {}).name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 14,
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, "These are extras beyond any linked protein/side/packaging — e.g. seasoning, sauce, napkins."), recipeLines.map((line, idx) => /*#__PURE__*/React.createElement("div", {
+    key: idx,
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("select", {
+    value: line.invId,
+    onChange: e => updateLine(idx, "invId", e.target.value),
+    style: {
+      flex: 2,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "7px 10px",
+      fontSize: 13,
+      background: C.cream
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "-- Select ingredient --"), inventory.map(i => /*#__PURE__*/React.createElement("option", {
+    key: i.id,
+    value: i.id
+  }, i.name, " (", i.unit, ")"))), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    value: line.qty,
+    onChange: e => updateLine(idx, "qty", e.target.value),
+    placeholder: "Qty",
+    step: "0.01",
+    style: {
+      width: 80,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "7px 10px",
+      fontSize: 13,
+      background: C.cream
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => removeLine(idx),
+    color: C.red,
+    outline: true
+  }, "X"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: addRecipeLine,
+    color: C.blue,
+    outline: true,
+    small: true
+  }, "+ Add Ingredient"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginLeft: "auto",
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: saveRecipe
+  }, "Save"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setEditRecipeId(null),
+    color: C.charcoal,
+    outline: true
+  }, "Cancel"))))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16,
+      background: C.lightGold,
+      border: "2px solid " + C.gold
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, editingMenuId ? "Edit Menu Item" : "Add Menu Item"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: 10,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    value: menuForm.name,
+    onChange: v => setMenuForm({
+      ...menuForm,
+      name: v
+    }),
+    placeholder: "Item name"
+  }), /*#__PURE__*/React.createElement(Sel, {
+    value: menuForm.cat,
+    onChange: v => setMenuForm({
+      ...menuForm,
+      cat: v
+    }),
+    options: MENU_CATS
+  }), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: menuForm.price,
+    onChange: v => setMenuForm({
+      ...menuForm,
+      price: v
+    }),
+    placeholder: "Price ($)"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    value: menuForm.allergens,
+    onChange: v => setMenuForm({
+      ...menuForm,
+      allergens: v
+    }),
+    placeholder: "Allergens (comma separated)"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    value: menuForm.comesWith,
+    onChange: v => setMenuForm({
+      ...menuForm,
+      comesWith: v
+    }),
+    placeholder: "Comes with (comma separated)"
+  }), menuProteinAddMode ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    value: menuNewProteinName,
+    onChange: setMenuNewProteinName,
+    placeholder: "New protein name",
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => {
+      if (!menuNewProteinName.trim()) return;
+      const np = {
+        id: Date.now(),
+        name: menuNewProteinName.trim(),
+        recipe: []
+      };
+      setProteins([...proteins, np]);
+      setMenuForm({
+        ...menuForm,
+        proteinId: String(np.id)
+      });
+      setMenuNewProteinName("");
+      setMenuProteinAddMode(false);
+    }
+  }, "Add"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => setMenuProteinAddMode(false),
+    color: C.charcoal,
+    outline: true
+  }, "Cancel")) : /*#__PURE__*/React.createElement("select", {
+    value: menuForm.proteinId,
+    onChange: e => {
+      if (e.target.value === "__new__") setMenuProteinAddMode(true);else setMenuForm({
+        ...menuForm,
+        proteinId: e.target.value
+      });
+    },
+    style: {
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "8px 10px",
+      fontSize: 14,
+      background: C.cream,
+      fontFamily: "inherit"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "No default protein"), (proteins || []).map(p => /*#__PURE__*/React.createElement("option", {
+    key: p.id,
+    value: p.id
+  }, "Protein: ", p.name)), /*#__PURE__*/React.createElement("option", {
+    value: "__new__"
+  }, "+ Add new protein...")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      marginBottom: 4
+    }
+  }, "Default sides always included:"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6
+    }
+  }, (sides || []).length === 0 ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: C.gray
+    }
+  }, "No sides defined yet") : (sides || []).map(s => {
+    const checked = (menuForm.sideIds || []).includes(s.id);
+    return /*#__PURE__*/React.createElement("label", {
+      key: s.id,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 11,
+        background: checked ? C.lightGold : C.white,
+        border: "1px solid " + C.border,
+        borderRadius: 6,
+        padding: "3px 8px",
+        cursor: "pointer"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: checked,
+      onChange: () => {
+        const next = checked ? (menuForm.sideIds || []).filter(id => id !== s.id) : [...(menuForm.sideIds || []), s.id];
+        setMenuForm({
+          ...menuForm,
+          sideIds: next
+        });
+      }
+    }), s.name);
+  }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      marginBottom: 4
+    }
+  }, "Default packaging always included:"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6
+    }
+  }, (packaging || []).length === 0 ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: C.gray
+    }
+  }, "No packaging defined yet") : (packaging || []).map(pk => {
+    const checked = (menuForm.packagingIds || []).includes(pk.id);
+    return /*#__PURE__*/React.createElement("label", {
+      key: pk.id,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 11,
+        background: checked ? C.lightGold : C.white,
+        border: "1px solid " + C.border,
+        borderRadius: 6,
+        padding: "3px 8px",
+        cursor: "pointer"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: checked,
+      onChange: () => {
+        const next = checked ? (menuForm.packagingIds || []).filter(id => id !== pk.id) : [...(menuForm.packagingIds || []), pk.id];
+        setMenuForm({
+          ...menuForm,
+          packagingIds: next
+        });
+      }
+    }), pk.name);
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 12,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: menuForm.available,
+    onChange: e => setMenuForm({
+      ...menuForm,
+      available: e.target.checked
+    }),
+    id: "mav"
+  }), /*#__PURE__*/React.createElement("label", {
+    htmlFor: "mav",
+    style: {
+      fontSize: 12
+    }
+  }, "Available now")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: addMenuItem,
+    color: editingMenuId ? C.gold : C.green
+  }, editingMenuId ? 'Save Changes' : 'Add Item'), editingMenuId && /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => {
+      setEditingMenuId(null);
+      setMenuForm({
+        name: '',
+        cat: 'Beverages',
+        price: '',
+        allergens: '',
+        available: true,
+        comesWith: '',
+        customGroups: [],
+        proteinId: '',
+        sideIds: [],
+        packagingIds: []
+      });
+    },
+    color: C.charcoal,
+    outline: true
+  }, "Cancel")))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      background: C.cream,
+      borderRadius: 6,
+      padding: 8
+    }
+  }, "Click \"Details\" on any item below to see its full ingredient-by-ingredient cost breakdown — base recipe, protein, sides, and packaging all together.")), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Categories"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    value: newCatName,
+    onChange: setNewCatName,
+    placeholder: "New category name"
+  }), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => {
+      if (!newCatName.trim() || MENU_CATS.includes(newCatName.trim())) return;
+      setSettings({
+        ...settings,
+        menuCategories: [...MENU_CATS, newCatName.trim()]
+      });
+      setNewCatName("");
+    },
+    style: {
+      whiteSpace: "nowrap"
+    }
+  }, "Add")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 8
+    }
+  }, MENU_CATS.map(cat => /*#__PURE__*/React.createElement("div", {
+    key: cat,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      background: C.cream,
+      border: "1px solid " + C.border,
+      borderRadius: 8,
+      padding: "6px 10px"
+    }
+  }, renamingCat === cat ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(Inp, {
+    value: renameCatVal,
+    onChange: setRenameCatVal,
+    style: {
+      width: 140
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => {
+      const newName = renameCatVal.trim();
+      if (!newName) return;
+      setSettings({
+        ...settings,
+        menuCategories: MENU_CATS.map(c => c === cat ? newName : c)
+      });
+      setMenu(menu.map(m => m.cat === cat ? {
+        ...m,
+        cat: newName
+      } : m));
+      setRenamingCat(null);
+    }
+  }, "Save"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => setRenamingCat(null),
+    color: C.charcoal,
+    outline: true
+  }, "Cancel")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 600,
+      fontSize: 13
+    }
+  }, cat), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => {
+      setRenamingCat(cat);
+      setRenameCatVal(cat);
+    },
+    color: C.blue,
+    outline: true
+  }, "Rename"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => {
+      const inUse = menu.filter(m => m.cat === cat).length;
+      if (inUse > 0) {
+        alert(cat + " is used by " + inUse + " menu item(s) — move or delete those first.");
+        return;
+      }
+      if (!window.confirm("Remove category \"" + cat + "\"?")) return;
+      setSettings({
+        ...settings,
+        menuCategories: MENU_CATS.filter(c => c !== cat)
+      });
+    },
+    color: C.red,
+    outline: true
+  }, "Remove")))))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: C.green
+    }
+  }, ["Item", "Cat", "Price", "Cost to Make", "Side Choices", "Status", ""].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      color: C.white,
+      padding: "8px 12px",
+      textAlign: "left"
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, (() => {
+    const sortedMenu = [...menu].sort((a, b) => a.cat === b.cat ? a.name.localeCompare(b.name) : a.cat.localeCompare(b.cat));
+    let lastCat = null,
+      rowIdx = 0;
+    return sortedMenu.map(item => {
+      const showHeader = item.cat !== lastCat;
+      lastCat = item.cat;
+      const i = rowIdx++;
+      const bd = itemBreakdown(item);
+      const isExpanded = expandedItemId === item.id;
+      return /*#__PURE__*/React.createElement(React.Fragment, {
+        key: item.id
+      }, showHeader && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        colSpan: 7,
+        style: {
+          background: C.lightGold,
+          padding: "7px 12px",
+          fontWeight: 800,
+          fontSize: 12,
+          color: C.dark,
+          borderTop: "2px solid " + C.gold
+        }
+      }, item.cat)), /*#__PURE__*/React.createElement("tr", {
+        style: {
+          background: i % 2 === 0 ? C.white : C.cream,
+          borderBottom: "1px solid " + C.border
+        }
+      }, /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px",
+          fontWeight: 600
+        }
+      }, item.name), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, /*#__PURE__*/React.createElement(Badge, {
+        small: true
+      }, item.cat)), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px",
+          fontWeight: 700,
+          color: C.green
+        }
+      }, fmt(item.price)), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 6
+        }
+      }, bd.lines.length === 0 ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.gray
+        }
+      }, "--") : fmt(bd.total), bd.missing && /*#__PURE__*/React.createElement(Badge, {
+        small: true,
+        color: C.orange
+      }, "incomplete"), /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => setExpandedItemId(isExpanded ? null : item.id),
+        color: C.blue,
+        outline: true
+      }, isExpanded ? "Hide" : "Details"))), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, (item.customGroups || []).length > 0 ? /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 6
+        }
+      }, /*#__PURE__*/React.createElement(Badge, {
+        small: true,
+        color: C.green
+      }, (item.customGroups || []).length, " group", (item.customGroups || []).length > 1 ? "s" : ""), /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => openCustEditor(item),
+        color: C.gold
+      }, "Edit")) : /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => openCustEditor(item),
+        color: C.blue,
+        outline: true
+      }, "+ Add")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: () => setMenu(menu.map(m => m.id === item.id ? {
+          ...m,
+          available: !m.available
+        } : m)),
+        style: {
+          background: item.available ? C.green : C.red,
+          color: C.white,
+          border: "none",
+          borderRadius: 12,
+          padding: "3px 10px",
+          fontSize: 11,
+          cursor: "pointer",
+          fontWeight: 700
+        }
+      }, item.available ? "Available" : "Hidden")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: '8px 12px',
+          display: 'flex',
+          gap: 4
+        }
+      }, /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => {
+          setEditingMenuId(item.id);
+          setMenuForm({
+            name: item.name,
+            cat: item.cat,
+            price: String(item.price),
+            allergens: (item.allergens || []).join(', '),
+            available: item.available,
+            comesWith: (item.comesWith || []).join(', '),
+            customGroups: item.customGroups || [],
+            proteinId: item.proteinId || "",
+            sideIds: item.sideIds || [],
+            packagingIds: item.packagingIds || []
+          });
+        },
+        color: C.blue,
+        outline: true
+      }, "Edit"), /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => openRecipe(item),
+        color: (recipes[item.id] || []).length > 0 ? C.gold : C.charcoal,
+        outline: true
+      }, "Base Recipe"), /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => setMenu(menu.filter(m => m.id !== item.id)),
+        color: C.red,
+        outline: true
+      }, "Del"))), isExpanded && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        colSpan: 7,
+        style: {
+          padding: "10px 16px",
+          background: "#FAF6EC"
+        }
+      }, bd.lines.length === 0 ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: C.gray
+        }
+      }, "No ingredients linked yet — set a Base Recipe, or link a protein/side/packaging above.") : /*#__PURE__*/React.createElement("table", {
+        style: {
+          width: "100%",
+          borderCollapse: "collapse",
+          fontSize: 12
+        }
+      }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+        style: {
+          textAlign: "left",
+          padding: "4px 8px",
+          color: C.charcoal
+        }
+      }, "From"), /*#__PURE__*/React.createElement("th", {
+        style: {
+          textAlign: "left",
+          padding: "4px 8px",
+          color: C.charcoal
+        }
+      }, "Ingredient"), /*#__PURE__*/React.createElement("th", {
+        style: {
+          textAlign: "left",
+          padding: "4px 8px",
+          color: C.charcoal
+        }
+      }, "Qty"), /*#__PURE__*/React.createElement("th", {
+        style: {
+          textAlign: "left",
+          padding: "4px 8px",
+          color: C.charcoal
+        }
+      }, "Unit Cost"), /*#__PURE__*/React.createElement("th", {
+        style: {
+          textAlign: "left",
+          padding: "4px 8px",
+          color: C.charcoal
+        }
+      }, "Line Cost"))), /*#__PURE__*/React.createElement("tbody", null, bd.lines.map((l, li) => /*#__PURE__*/React.createElement("tr", {
+        key: li,
+        style: {
+          borderBottom: "1px solid " + C.border
+        }
+      }, /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "4px 8px",
+          color: C.teal
+        }
+      }, l.label), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "4px 8px"
+        }
+      }, l.ingredient), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "4px 8px"
+        }
+      }, l.qty, l.unit), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "4px 8px"
+        }
+      }, l.unitCost ? fmt(l.unitCost) : /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.orange
+        }
+      }, "not set")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "4px 8px",
+          fontWeight: 700
+        }
+      }, fmt(l.lineCost)))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        colSpan: 4,
+        style: {
+          padding: "6px 8px",
+          fontWeight: 800
+        }
+      }, "TOTAL COST PER SERVING"), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "6px 8px",
+          fontWeight: 800,
+          color: C.green
+        }
+      }, fmt(bd.total))))))));
+    });
+  })())))), menuView === "components" && /*#__PURE__*/React.createElement("div", null, editCompId && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: "rgba(0,0,0,0.65)",
+      zIndex: 900,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      width: 520,
+      maxHeight: "80vh",
+      overflow: "auto",
+      border: "2px solid " + C.gold
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Recipe: ", (compListFor(editCompId.type).find(c => c.id === editCompId.id) || {}).name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 14,
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, "Set the quantity of each ingredient used per 1 serving. Any menu item linked to it deducts these automatically."), compLines.map((line, idx) => /*#__PURE__*/React.createElement("div", {
+    key: idx,
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "center",
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("select", {
+    value: line.invId,
+    onChange: e => updateCompLine(idx, "invId", e.target.value),
+    style: {
+      flex: 2,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "7px 10px",
+      fontSize: 13,
+      background: C.cream
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "-- Select ingredient --"), inventory.map(i => /*#__PURE__*/React.createElement("option", {
+    key: i.id,
+    value: i.id
+  }, i.name, " (", i.unit, ")"))), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    value: line.qty,
+    onChange: e => updateCompLine(idx, "qty", e.target.value),
+    placeholder: "Qty",
+    step: "0.01",
+    style: {
+      width: 80,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "7px 10px",
+      fontSize: 13,
+      background: C.cream
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.gray,
+      minWidth: 30
+    }
+  }, line.invId ? (inventory.find(i => i.id === parseInt(line.invId)) || {}).unit || "" : ""), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => removeCompLine(idx),
+    color: C.red,
+    outline: true
+  }, "X"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginTop: 10
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: addCompLine,
+    color: C.blue,
+    outline: true,
+    small: true
+  }, "+ Add Ingredient"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginLeft: "auto",
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: saveComponentRecipe
+  }, "Save Recipe"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setEditCompId(null),
+    color: C.charcoal,
+    outline: true
+  }, "Cancel"))))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16,
+      background: C.lightGold,
+      border: "1px dashed " + C.gold
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13,
+      marginBottom: 10,
+      color: C.dark
+    }
+  }, "Proteins, sides, and packaging defined here can be reused across any menu item — set the cost once, update it once, and every dish using it stays accurate."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Sel, {
+    value: newCompType,
+    onChange: setNewCompType,
+    options: ["protein", "side", "packaging"],
+    style: {
+      width: 140
+    }
+  }), /*#__PURE__*/React.createElement(Inp, {
+    value: newCompName,
+    onChange: setNewCompName,
+    placeholder: "e.g. Jerk Chicken, Rice & Peas, Food Box",
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    onClick: addComponent
+  }, "+ Add"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: 16
+    }
+  }, [["protein", "Proteins", proteins], ["side", "Sides", sides], ["packaging", "Packaging", packaging]].map(([type, label, list]) => /*#__PURE__*/React.createElement(Card, {
+    key: type
+  }, /*#__PURE__*/React.createElement(SH, null, label), list.length === 0 ? /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.gray,
+      fontSize: 13,
+      textAlign: "center",
+      padding: 16
+    }
+  }, "No ", label.toLowerCase(), " added yet.") : list.map(c => /*#__PURE__*/React.createElement("div", {
+    key: c.id,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: "10px 0",
+      borderBottom: "1px solid " + C.border
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13
+    }
+  }, c.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal
+    }
+  }, (c.recipe || []).length, " ingredient", (c.recipe || []).length !== 1 ? "s" : "", " — cost/serving: ", fmt(componentCost(c)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => openComponentRecipe(type, c),
+    color: (c.recipe || []).length > 0 ? C.gold : C.blue
+  }, (c.recipe || []).length > 0 ? "Edit" : "Set Recipe"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => deleteComponent(type, c.id),
+    color: C.red,
+    outline: true
+  }, "Del")))))))));
+}
 function App() {
   const [tab, setTab] = useState("pos");
   const [settings, setSettings, sLoaded] = usePersistedState("tog-settings", DEFAULT_SETTINGS);
@@ -11632,6 +13270,7 @@ function App() {
   const [recipes, setRecipes, recLoaded] = usePersistedState("tog-recipes", RECIPES_INIT);
   const [proteins, setProteins, protLoaded] = usePersistedState("tog-proteins", []);
   const [sides, setSides, sidesLoaded] = usePersistedState("tog-sides", []);
+  const [packaging, setPackaging, packLoaded] = usePersistedState("tog-packaging", []);
   const [refunds, setRefunds, refLoaded] = usePersistedState("tog-refunds", []);
   const [countLog, setCountLog, logLoaded] = usePersistedState("tog-count-log", []);
   const [cateringEvents, setCateringEvents, catLoaded] = usePersistedState("tog-catering", CATERING_INIT);
@@ -11646,6 +13285,7 @@ function App() {
   const TAB_PERM_KEY = {
     pos: null,
     kitchen: null,
+    menu: "accessMenu",
     inventory: "accessInventory",
     expenses: "accessExpenses",
     staff: "accessStaff",
@@ -11713,6 +13353,20 @@ function App() {
           (menuDef.sideIds || []).forEach(sid => {
             const side = sides.find(s => s.id === sid);
             if (side) applyRecipe(side.recipe, saleItem.qty);
+          });
+        }
+        // 4) Packaging works the same way as sides — e.g. a shared "Food
+        //    Box" used by both Fries-to-go and Oxtail-to-go deducts from
+        //    the exact same packaging stock either way.
+        if (saleItem.chosenPackagingIds && saleItem.chosenPackagingIds.length > 0) {
+          saleItem.chosenPackagingIds.forEach(pid => {
+            const pkg = packaging.find(p => p.id === parseInt(pid));
+            if (pkg) applyRecipe(pkg.recipe, saleItem.qty);
+          });
+        } else {
+          (menuDef.packagingIds || []).forEach(pid => {
+            const pkg = packaging.find(p => p.id === pid);
+            if (pkg) applyRecipe(pkg.recipe, saleItem.qty);
           });
         }
       });
@@ -11919,6 +13573,20 @@ function App() {
   }), tab === "kitchen" && /*#__PURE__*/React.createElement(KitchenTab, {
     kitchenOrders: kitchenOrders,
     setKitchenOrders: setKitchenOrders
+  }), tab === "menu" && /*#__PURE__*/React.createElement(MenuTab, {
+    menu: menu,
+    setMenu: setMenu,
+    recipes: recipes,
+    setRecipes: setRecipes,
+    proteins: proteins,
+    setProteins: setProteins,
+    sides: sides,
+    setSides: setSides,
+    packaging: packaging,
+    setPackaging: setPackaging,
+    inventory: inventory,
+    settings: settings,
+    setSettings: setSettings
   }), tab === "inventory" && /*#__PURE__*/React.createElement(InventoryTab, {
     inventory: inventory,
     setInventory: setInventory,
