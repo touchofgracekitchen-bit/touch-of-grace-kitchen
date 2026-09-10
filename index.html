@@ -3963,89 +3963,108 @@ function InventoryTab({
       textAlign: "left",
       fontSize: 11
     }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, (menu || []).map((item, idx) => {
-    const recipe = recipes[item.id] || [];
-    const cm = recipe.length > 0 ? getCanMake(item.id) : null;
-    return /*#__PURE__*/React.createElement("tr", {
-      key: item.id,
-      style: {
-        background: idx % 2 === 0 ? C.white : C.cream,
-        borderBottom: "1px solid " + C.border
-      }
-    }, /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "9px 12px",
-        fontWeight: 600
-      }
-    }, item.name, !item.available && /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 10,
-        color: C.gray,
-        marginLeft: 6
-      }
-    }, "(hidden)")), /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "9px 12px"
-      }
-    }, /*#__PURE__*/React.createElement(Badge, {
-      small: true
-    }, item.cat)), /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "9px 12px"
-      }
-    }, recipe.length === 0 ? /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 12,
-        color: C.gray
-      }
-    }, "No recipe set") : /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 4
-      }
-    }, recipe.map((r, i) => {
-      const inv = inventory.find(x => x.id === r.invId);
-      return inv ? /*#__PURE__*/React.createElement(Badge, {
-        key: i,
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, (() => {
+    const sortedMenu = [...(menu || [])].sort((a, b) => a.cat === b.cat ? a.name.localeCompare(b.name) : a.cat.localeCompare(b.cat));
+    let lastCat = null,
+      rowIdx = 0;
+    return sortedMenu.map(item => {
+      const recipe = recipes[item.id] || [];
+      const cm = recipe.length > 0 ? getCanMake(item.id) : null;
+      const showHeader = item.cat !== lastCat;
+      lastCat = item.cat;
+      const idx = rowIdx++;
+      return /*#__PURE__*/React.createElement(React.Fragment, {
+        key: item.id
+      }, showHeader && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        colSpan: 5,
+        style: {
+          background: C.lightGold,
+          padding: "7px 12px",
+          fontWeight: 800,
+          fontSize: 12,
+          color: C.dark,
+          borderTop: "2px solid " + C.gold
+        }
+      }, item.cat)), /*#__PURE__*/React.createElement("tr", {
+        style: {
+          background: idx % 2 === 0 ? C.white : C.cream,
+          borderBottom: "1px solid " + C.border
+        }
+      }, /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "9px 12px",
+          fontWeight: 600
+        }
+      }, item.name, !item.available && /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 10,
+          color: C.gray,
+          marginLeft: 6
+        }
+      }, "(hidden)")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "9px 12px"
+        }
+      }, /*#__PURE__*/React.createElement(Badge, {
+        small: true
+      }, item.cat)), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "9px 12px"
+        }
+      }, recipe.length === 0 ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: C.gray
+        }
+      }, "No recipe set") : /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 4
+        }
+      }, recipe.map((r, i) => {
+        const inv = inventory.find(x => x.id === r.invId);
+        return inv ? /*#__PURE__*/React.createElement(Badge, {
+          key: i,
+          small: true,
+          color: C.teal
+        }, r.qty, inv.unit, " ", inv.name) : null;
+      }))), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "9px 12px"
+        }
+      }, cm === null ? /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 12,
+          color: C.gray
+        }
+      }, "--") : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontWeight: 800,
+          fontSize: 15,
+          color: cm.can < 5 ? C.red : cm.can < 15 ? C.orange : C.green
+        }
+      }, cm.can), /*#__PURE__*/React.createElement("span", {
+        style: {
+          fontSize: 11,
+          color: C.charcoal
+        }
+      }, " servings"), cm.can < 20 && /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          color: C.red
+        }
+      }, "Low: ", cm.bottleneck))), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "9px 12px"
+        }
+      }, /*#__PURE__*/React.createElement(Btn, {
         small: true,
-        color: C.teal
-      }, r.qty, inv.unit, " ", inv.name) : null;
-    }))), /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "9px 12px"
-      }
-    }, cm === null ? /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 12,
-        color: C.gray
-      }
-    }, "--") : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontWeight: 800,
-        fontSize: 15,
-        color: cm.can < 5 ? C.red : cm.can < 15 ? C.orange : C.green
-      }
-    }, cm.can), /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 11,
-        color: C.charcoal
-      }
-    }, " servings"), cm.can < 20 && /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 11,
-        color: C.red
-      }
-    }, "Low: ", cm.bottleneck))), /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "9px 12px"
-      }
-    }, /*#__PURE__*/React.createElement(Btn, {
-      small: true,
-      onClick: () => openRecipe(item),
-      color: recipe.length > 0 ? C.gold : C.blue
-    }, recipe.length > 0 ? "Edit" : "Set Recipe")));
-  }))))), section === "components" && canSeeRecipes && /*#__PURE__*/React.createElement("div", null, editCompId && /*#__PURE__*/React.createElement("div", {
+        onClick: () => openRecipe(item),
+        color: recipe.length > 0 ? C.gold : C.blue
+      }, recipe.length > 0 ? "Edit" : "Set Recipe"))));
+    });
+  })())))), section === "components" && canSeeRecipes && /*#__PURE__*/React.createElement("div", null, editCompId && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       top: 0,
@@ -10968,106 +10987,127 @@ function SettingsTab({
       padding: "8px 12px",
       textAlign: "left"
     }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, menu.map((item, i) => /*#__PURE__*/React.createElement("tr", {
-    key: item.id,
-    style: {
-      background: i % 2 === 0 ? C.white : C.cream,
-      borderBottom: "1px solid " + C.border
-    }
-  }, /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 12px",
-      fontWeight: 600
-    }
-  }, item.name), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 12px"
-    }
-  }, /*#__PURE__*/React.createElement(Badge, {
-    small: true
-  }, item.cat)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 12px",
-      fontWeight: 700,
-      color: C.green
-    }
-  }, fmt(item.price)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 12px",
-      fontSize: 11,
-      color: C.teal
-    }
-  }, (item.comesWith || []).join(", ") || "--"), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 12px"
-    }
-  }, (item.customGroups || []).length > 0 ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement(Badge, {
-    small: true,
-    color: C.green
-  }, (item.customGroups || []).length, " group", (item.customGroups || []).length > 1 ? "s" : ""), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => openCustEditor(item),
-    color: C.gold
-  }, "Edit")) : /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => openCustEditor(item),
-    color: C.blue,
-    outline: true
-  }, "+ Add")), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 12px"
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => setMenu(menu.map(m => m.id === item.id ? {
-      ...m,
-      available: !m.available
-    } : m)),
-    style: {
-      background: item.available ? C.green : C.red,
-      color: C.white,
-      border: "none",
-      borderRadius: 12,
-      padding: "3px 10px",
-      fontSize: 11,
-      cursor: "pointer",
-      fontWeight: 700
-    }
-  }, item.available ? "Available" : "Hidden")), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: '8px 12px',
-      display: 'flex',
-      gap: 4
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      setEditingMenuId(item.id);
-      setMenuForm({
-        name: item.name,
-        cat: item.cat,
-        price: String(item.price),
-        allergens: (item.allergens || []).join(', '),
-        available: item.available,
-        comesWith: (item.comesWith || []).join(', '),
-        customGroups: item.customGroups || [],
-        proteinId: item.proteinId || "",
-        sideIds: item.sideIds || []
-      });
-    },
-    color: C.blue,
-    outline: true
-  }, "Edit"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => setMenu(menu.filter(m => m.id !== item.id)),
-    color: C.red,
-    outline: true
-  }, "Del")))))))), section === "positions" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, (() => {
+    const sorted = [...menu].sort((a, b) => a.cat === b.cat ? a.name.localeCompare(b.name) : a.cat.localeCompare(b.cat));
+    let lastCat = null,
+      rowIdx = 0;
+    return sorted.map(item => {
+      const showHeader = item.cat !== lastCat;
+      lastCat = item.cat;
+      const i = rowIdx++;
+      return /*#__PURE__*/React.createElement(React.Fragment, {
+        key: item.id
+      }, showHeader && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        colSpan: 7,
+        style: {
+          background: C.lightGold,
+          padding: "7px 12px",
+          fontWeight: 800,
+          fontSize: 12,
+          color: C.dark,
+          borderTop: "2px solid " + C.gold
+        }
+      }, item.cat)), /*#__PURE__*/React.createElement("tr", {
+        style: {
+          background: i % 2 === 0 ? C.white : C.cream,
+          borderBottom: "1px solid " + C.border
+        }
+      }, /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px",
+          fontWeight: 600
+        }
+      }, item.name), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, /*#__PURE__*/React.createElement(Badge, {
+        small: true
+      }, item.cat)), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px",
+          fontWeight: 700,
+          color: C.green
+        }
+      }, fmt(item.price)), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px",
+          fontSize: 11,
+          color: C.teal
+        }
+      }, (item.comesWith || []).join(", ") || "--"), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, (item.customGroups || []).length > 0 ? /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 6
+        }
+      }, /*#__PURE__*/React.createElement(Badge, {
+        small: true,
+        color: C.green
+      }, (item.customGroups || []).length, " group", (item.customGroups || []).length > 1 ? "s" : ""), /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => openCustEditor(item),
+        color: C.gold
+      }, "Edit")) : /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => openCustEditor(item),
+        color: C.blue,
+        outline: true
+      }, "+ Add")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: () => setMenu(menu.map(m => m.id === item.id ? {
+          ...m,
+          available: !m.available
+        } : m)),
+        style: {
+          background: item.available ? C.green : C.red,
+          color: C.white,
+          border: "none",
+          borderRadius: 12,
+          padding: "3px 10px",
+          fontSize: 11,
+          cursor: "pointer",
+          fontWeight: 700
+        }
+      }, item.available ? "Available" : "Hidden")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: '8px 12px',
+          display: 'flex',
+          gap: 4
+        }
+      }, /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => {
+          setEditingMenuId(item.id);
+          setMenuForm({
+            name: item.name,
+            cat: item.cat,
+            price: String(item.price),
+            allergens: (item.allergens || []).join(', '),
+            available: item.available,
+            comesWith: (item.comesWith || []).join(', '),
+            customGroups: item.customGroups || [],
+            proteinId: item.proteinId || "",
+            sideIds: item.sideIds || []
+          });
+        },
+        color: C.blue,
+        outline: true
+      }, "Edit"), /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => setMenu(menu.filter(m => m.id !== item.id)),
+        color: C.red,
+        outline: true
+      }, "Del"))));
+    });
+  })())))), section === "positions" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 14,
       background: C.lightGold,
