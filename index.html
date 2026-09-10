@@ -4802,6 +4802,7 @@ function StaffTab({
   const [addMode, setAddMode] = useState(false);
   const [editId, setEditId] = useState(null);
   const [showPin, setShowPin] = useState(false);
+  const [showSin, setShowSin] = useState(false);
   const [pinModal, setPinModal] = useState(null);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState("");
@@ -4814,7 +4815,14 @@ function StaffTab({
     hourlyRate: "",
     hoursPerWeek: "",
     startDate: today(),
-    positionId: 3
+    positionId: 3,
+    sin: "",
+    address: "",
+    permanentDate: "",
+    contactNumber: "",
+    nextOfKin: "",
+    benefits: "",
+    employmentBasis: "Full-time"
   };
   const [form, setForm] = useState(blankForm);
   const mult = payPeriod === "weekly" ? 1 : payPeriod === "bi-weekly" ? 2 : 4;
@@ -4840,9 +4848,17 @@ function StaffTab({
       hourlyRate: s.hourlyRate,
       hoursPerWeek: s.hoursPerWeek,
       startDate: s.startDate || "",
-      positionId: s.positionId || 3
+      positionId: s.positionId || 3,
+      sin: s.sin || "",
+      address: s.address || "",
+      permanentDate: s.permanentDate || "",
+      contactNumber: s.contactNumber || "",
+      nextOfKin: s.nextOfKin || "",
+      benefits: s.benefits || "",
+      employmentBasis: s.employmentBasis || "Full-time"
     });
     setShowPin(false);
+    setShowSin(false);
     setAddMode(true);
   };
   const saveForm = () => {
@@ -5153,7 +5169,138 @@ function StaffTab({
       marginTop: 3,
       fontWeight: 700
     }
-  }, "PIN: ", form.pin))), (() => {
+  }, "PIN: ", form.pin))), /*#__PURE__*/React.createElement(SH, null, "Personal & Employment Details"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 12,
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "SIN"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    type: showSin ? "text" : "password",
+    value: form.sin,
+    onChange: v => setForm({
+      ...form,
+      sin: v
+    }),
+    placeholder: "000 000 000",
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowSin(!showSin),
+    style: {
+      background: C.cream,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "8px 10px",
+      cursor: "pointer",
+      fontSize: 11,
+      fontFamily: "inherit",
+      whiteSpace: "nowrap"
+    }
+  }, showSin ? "Hide" : "Show"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "Contact Number"), /*#__PURE__*/React.createElement(Inp, {
+    value: form.contactNumber,
+    onChange: v => setForm({
+      ...form,
+      contactNumber: v
+    }),
+    placeholder: "e.g. 250 555 0123"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "span 2"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "Address"), /*#__PURE__*/React.createElement(Inp, {
+    value: form.address,
+    onChange: v => setForm({
+      ...form,
+      address: v
+    }),
+    placeholder: "Street, City, Province, Postal Code"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "Date Made Permanent"), /*#__PURE__*/React.createElement(Inp, {
+    type: "date",
+    value: form.permanentDate,
+    onChange: v => setForm({
+      ...form,
+      permanentDate: v
+    })
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "Full-time / Part-time"), /*#__PURE__*/React.createElement(Sel, {
+    value: form.employmentBasis,
+    onChange: v => setForm({
+      ...form,
+      employmentBasis: v
+    }),
+    options: ["Full-time", "Part-time"]
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "Next of Kin"), /*#__PURE__*/React.createElement(Inp, {
+    value: form.nextOfKin,
+    onChange: v => setForm({
+      ...form,
+      nextOfKin: v
+    }),
+    placeholder: "Name and phone number"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "Benefits"), /*#__PURE__*/React.createElement(Inp, {
+    value: form.benefits,
+    onChange: v => setForm({
+      ...form,
+      benefits: v
+    }),
+    placeholder: "e.g. Extended health, dental"
+  }))), (() => {
     const pos = (positions || POSITIONS_INIT).find(p => p.id === parseInt(form.positionId));
     if (!pos) return null;
     const granted = PERMISSIONS.filter(p => pos.permissions && pos.permissions[p.key]);
@@ -5512,8 +5659,10 @@ function AccountsTab({
     billingCycle: "weekly",
     notes: ""
   });
+  const [acctSearch, setAcctSearch] = useState("");
   const [acOrder, setAcOrder] = useState([]);
   const [acOrderCat, setAcOrderCat] = useState("All");
+  const [acOrderNote, setAcOrderNote] = useState("");
   const [acCustomItem, setAcCustomItem] = useState(null);
   const [orderNum2, setOrderNum2] = useState(() => {
     try {
@@ -5666,14 +5815,36 @@ function AccountsTab({
     onClick: () => setAddMode(false),
     color: C.charcoal,
     outline: true
-  }, "Cancel")))), accounts.length === 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Cancel")))), /*#__PURE__*/React.createElement(Inp, {
+    value: acctSearch,
+    onChange: setAcctSearch,
+    placeholder: "Search name or phone...",
+    style: {
+      marginBottom: 10
+    }
+  }), accounts.length === 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       color: C.gray,
       fontSize: 13,
       padding: 20,
       textAlign: "center"
     }
-  }, "No accounts yet. Add your first account to start taking orders on credit."), accounts.map(a => {
+  }, "No accounts yet. Add your first account to start taking orders on credit."), accounts.length > 0 && accounts.filter(a => {
+    const q = acctSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (a.name || "").toLowerCase().includes(q) || (a.contact || "").toLowerCase().includes(q) || (a.phone || "").toLowerCase().includes(q);
+  }).length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.gray,
+      fontSize: 13,
+      padding: 20,
+      textAlign: "center"
+    }
+  }, "No accounts match \"", acctSearch, "\"."), accounts.filter(a => {
+    const q = acctSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (a.name || "").toLowerCase().includes(q) || (a.contact || "").toLowerCase().includes(q) || (a.phone || "").toLowerCase().includes(q);
+  }).map(a => {
     const owed = totalOwed(a);
     const isSelected = selected === a.id;
     return /*#__PURE__*/React.createElement("div", {
@@ -5854,6 +6025,7 @@ function AccountsTab({
         } catch (e) {}
         return n + 1;
       });
+      const customerNote = acOrderNote.trim();
       const sale = {
         id: Date.now(),
         orderNumber: num,
@@ -5871,18 +6043,20 @@ function AccountsTab({
         paymentStatus: "on-account",
         accountId: acc.id,
         discount: null,
-        note: "Ordered via Accounts tab"
+        note: customerNote || "Ordered via Accounts tab"
       };
       onSaleComplete(sale);
       if (setKitchenOrders) {
+        const kitchenNote = "Phone order - " + acc.name + (customerNote ? " | " + customerNote : "");
         setKitchenOrders(prev => [...(prev || []), {
           ...sale,
           status: "new",
           placedAt: Date.now(),
-          note: "Phone order - " + acc.name
+          note: kitchenNote
         }]);
       }
       setAcOrder([]);
+      setAcOrderNote("");
       setView("orders");
     };
     return /*#__PURE__*/React.createElement("div", {
@@ -5988,7 +6162,17 @@ function AccountsTab({
       style: {
         marginTop: 12,
         paddingTop: 10,
-        borderTop: "1px solid " + C.border,
+        borderTop: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement(Inp, {
+      value: acOrderNote,
+      onChange: setAcOrderNote,
+      placeholder: "Note for this order (e.g. no onions, deliver by 6pm)",
+      style: {
+        marginBottom: 12
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
         fontSize: 13
       }
     }, /*#__PURE__*/React.createElement("div", {
@@ -8678,6 +8862,7 @@ function ReportsTab({
   countLog
 }) {
   const [view, setView] = useState("monthly");
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Flexible date range — defaults to the current month, but any range
   // works so you can compare specific weeks against each other.
@@ -8770,7 +8955,7 @@ function ReportsTab({
       marginBottom: 12,
       flexWrap: "wrap"
     }
-  }, [["monthly", "Monthly Overview"], ["detail", "Monthly Detail"], ["cost", "Cost Analysis"], ["expenses", "Expense Trends"], ["adjustments", "Adjustments"], ["tax", "Tax Summary"], ["variance", "Inventory Variance"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["monthly", "Monthly Overview"], ["detail", "Monthly Detail"], ["search", "Item Search"], ["cost", "Cost Analysis"], ["expenses", "Expense Trends"], ["adjustments", "Adjustments"], ["tax", "Tax Summary"], ["variance", "Inventory Variance"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
     key: v,
     onClick: () => setView(v),
     style: {
@@ -8921,7 +9106,121 @@ function ReportsTab({
         marginTop: 2
       }
     }, (rev / p * 100).toFixed(0), "% of projection"));
-  }))), view === "detail" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }))), view === "search" && (() => {
+    const term = searchTerm.trim().toLowerCase();
+    const matches = {}; // key: "Item name — customization" -> {qty, revenue}
+    let totalQty = 0,
+      totalRev = 0;
+    if (term) {
+      allMSales.forEach(s => {
+        s.items.forEach(i => {
+          const haystack = (i.name + " " + (i.customization || "")).toLowerCase();
+          if (haystack.includes(term)) {
+            const key = i.customization ? i.name + " — " + i.customization : i.name;
+            if (!matches[key]) matches[key] = {
+              qty: 0,
+              revenue: 0
+            };
+            matches[key].qty += i.qty;
+            matches[key].revenue += i.price * i.qty;
+            totalQty += i.qty;
+            totalRev += i.price * i.qty;
+          }
+        });
+      });
+    }
+    const rows = Object.entries(matches).sort((a, b) => b[1].qty - a[1].qty);
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement(SH, null, "Search Sold Items"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.charcoal,
+        marginBottom: 12
+      }
+    }, "Search across every item name and every side/customization note in the selected date range (", dateFrom, " to ", dateTo, ") — a plain text match, nothing to set up first. Useful for spotting how many servings of something (like \"rice\") sold, so you can work out a serving size by hand."), /*#__PURE__*/React.createElement(Inp, {
+      value: searchTerm,
+      onChange: setSearchTerm,
+      placeholder: "e.g. rice, festival, chicken..."
+    })), term && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        marginBottom: 14,
+        flexWrap: "wrap",
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        fontWeight: 700
+      }
+    }, "Matches for \"", searchTerm, "\""), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13
+      }
+    }, "Total sold: ", /*#__PURE__*/React.createElement("strong", {
+      style: {
+        color: C.green
+      }
+    }, totalQty), " \xA0|\xA0 Combined line revenue: ", /*#__PURE__*/React.createElement("strong", {
+      style: {
+        color: C.green
+      }
+    }, fmt(totalRev)))), rows.length === 0 ? /*#__PURE__*/React.createElement("p", {
+      style: {
+        color: C.gray,
+        textAlign: "center",
+        padding: 20
+      }
+    }, "No matches in this date range.") : /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: C.green
+      }
+    }, ["Item / Choice", "Qty Sold", "Line Revenue"].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: {
+        color: C.white,
+        padding: "8px 12px",
+        textAlign: "left",
+        fontSize: 12
+      }
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, rows.map(([key, v], i) => /*#__PURE__*/React.createElement("tr", {
+      key: key,
+      style: {
+        background: i % 2 === 0 ? C.white : C.cream,
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, key), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        fontWeight: 700
+      }
+    }, v.qty), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        color: C.green
+      }
+    }, fmt(v.revenue)))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.gray,
+        marginTop: 10
+      }
+    }, "Note: \"Line Revenue\" is the price of the whole dish the item was part of, not a separate price for the side itself — most sides are included free with a plate.")));
+  })(), view === "detail" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(4,1fr)",
