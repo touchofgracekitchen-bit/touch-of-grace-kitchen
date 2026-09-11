@@ -5308,7 +5308,9 @@ function AccountsTab({
   onSaleComplete,
   menu,
   settings,
-  setKitchenOrders
+  setKitchenOrders,
+  staff,
+  positions
 }) {
   const [selected, setSelected] = useState(null);
   const [addMode, setAddMode] = useState(false);
@@ -5329,6 +5331,12 @@ function AccountsTab({
   const [acOrder, setAcOrder] = useState([]);
   const [acOrderCat, setAcOrderCat] = useState("All");
   const [acOrderNote, setAcOrderNote] = useState("");
+  const [acShowDiscount, setAcShowDiscount] = useState(false);
+  const [acDiscountType, setAcDiscountType] = useState("percent");
+  const [acDiscountValue, setAcDiscountValue] = useState("");
+  const [acIsComp, setAcIsComp] = useState(false);
+  const [acCompAuth, setAcCompAuth] = useState(null);
+  const [acPinGate, setAcPinGate] = useState(false);
   const [acCustomItem, setAcCustomItem] = useState(null);
   const [orderNum2, setOrderNum2] = useState(() => {
     try {
@@ -5660,9 +5668,24 @@ function AccountsTab({
     const cats2 = ["All", ...Array.from(new Set(menu.filter(m => m.available).map(m => m.cat)))];
     const visible2 = menu.filter(m => m.available && (acOrderCat === "All" || m.cat === acOrderCat));
     const acSubtotal = acOrder.reduce((s, i) => s + i.price * i.qty, 0);
-    const acGst = settings.taxes.gstEnabled !== false ? acSubtotal * (settings.taxes.gst / 100) : 0;
-    const acPst = settings.taxes.pstEnabled !== false ? acSubtotal * (settings.taxes.pst / 100) : 0;
-    const acTotal = acSubtotal + acGst + acPst;
+    let acDiscountAmt = 0,
+      acDiscountLabel = "";
+    if (acIsComp) {
+      acDiscountAmt = acSubtotal;
+      acDiscountLabel = "Complimentary";
+    } else if (acShowDiscount && acDiscountValue !== "") {
+      if (acDiscountType === "percent") {
+        acDiscountAmt = acSubtotal * (parseFloat(acDiscountValue) / 100);
+        acDiscountLabel = acDiscountValue + "% off";
+      } else {
+        acDiscountAmt = Math.min(parseFloat(acDiscountValue) || 0, acSubtotal);
+        acDiscountLabel = fmt(acDiscountValue) + " off";
+      }
+    }
+    const acDiscountedSub = Math.max(0, acSubtotal - acDiscountAmt);
+    const acGst = settings.taxes.gstEnabled !== false ? acDiscountedSub * (settings.taxes.gst / 100) : 0;
+    const acPst = settings.taxes.pstEnabled !== false ? acDiscountedSub * (settings.taxes.pst / 100) : 0;
+    const acTotal = acDiscountedSub + acGst + acPst;
     const addToAcOrder = item => {
       setAcOrder(prev => {
         const ex = prev.find(o => o.name === item.name && o.customization === (item.customization || null));
@@ -5684,6 +5707,10 @@ function AccountsTab({
     };
     const placeAcOrder = () => {
       if (acOrder.length === 0) return;
+      if (acIsComp && !acCompAuth) {
+        setAcPinGate(true);
+        return;
+      }
       const num = orderNum2;
       setOrderNum2(n => {
         try {
@@ -5692,6 +5719,15 @@ function AccountsTab({
         return n + 1;
       });
       const customerNote = acOrderNote.trim();
+      const discount = acDiscountAmt > 0 || acIsComp ? {
+        type: acIsComp ? "complimentary" : acDiscountType,
+        label: acDiscountLabel || (acIsComp ? "Complimentary" : ""),
+        amount: parseFloat((acDiscountAmt || 0).toFixed(2)),
+        authorizedBy: acCompAuth || ""
+      } : null;
+      // A fully complimentary order has nothing to collect, so it's
+      // not added to the account balance — everything else still
+      // bills to the account as usual, discount already applied.
       const sale = {
         id: Date.now(),
         orderNumber: num,
@@ -5699,16 +5735,16 @@ function AccountsTab({
         time: nowStr(),
         items: [...acOrder],
         subtotal: parseFloat(acSubtotal.toFixed(2)),
-        discountAmt: 0,
-        discountedSub: parseFloat(acSubtotal.toFixed(2)),
+        discountAmt: parseFloat((acDiscountAmt || 0).toFixed(2)),
+        discountedSub: parseFloat(acDiscountedSub.toFixed(2)),
         gst: parseFloat(acGst.toFixed(2)),
         pst: parseFloat(acPst.toFixed(2)),
         total: parseFloat(acTotal.toFixed(2)),
         orderType: "Pickup",
-        payMethod: "On Account",
-        paymentStatus: "on-account",
+        payMethod: acIsComp ? "Complimentary" : "On Account",
+        paymentStatus: acIsComp ? "paid" : "on-account",
         accountId: acc.id,
-        discount: null,
+        discount,
         note: customerNote || "Ordered via Accounts tab"
       };
       onSaleComplete(sale);
@@ -5723,6 +5759,10 @@ function AccountsTab({
       }
       setAcOrder([]);
       setAcOrderNote("");
+      setAcShowDiscount(false);
+      setAcDiscountValue("");
+      setAcIsComp(false);
+      setAcCompAuth(null);
       setView("orders");
     };
     return /*#__PURE__*/React.createElement("div", {
@@ -5837,7 +5877,77 @@ function AccountsTab({
       style: {
         marginBottom: 12
       }
-    })), /*#__PURE__*/React.createElement("div", {
+    })), !acIsComp && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 10
+      }
+    }, acShowDiscount ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement(Sel, {
+      value: acDiscountType,
+      onChange: setAcDiscountType,
+      options: ["percent", "fixed"],
+      style: {
+        width: 90
+      }
+    }), /*#__PURE__*/React.createElement(Inp, {
+      type: "number",
+      value: acDiscountValue,
+      onChange: setAcDiscountValue,
+      placeholder: acDiscountType === "percent" ? "% off" : "$ off",
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        setAcShowDiscount(false);
+        setAcDiscountValue("");
+      },
+      color: C.charcoal,
+      outline: true
+    }, "X")) : /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => setAcShowDiscount(true),
+      color: C.purple,
+      outline: true
+    }, "+ Add Discount")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 10
+      }
+    }, acIsComp ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.teal,
+        color: C.white,
+        borderRadius: 8,
+        padding: "8px 12px",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        fontSize: 12
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Complimentary", acCompAuth ? " — authorized by " + acCompAuth : ""), /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        setAcIsComp(false);
+        setAcCompAuth(null);
+      },
+      style: {
+        background: "none",
+        border: "none",
+        color: C.white,
+        cursor: "pointer",
+        fontWeight: 700
+      }
+    }, "x")) : /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => setAcIsComp(true),
+      color: C.teal,
+      outline: true
+    }, "Mark Complimentary (no charge)")), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13
       }
@@ -5846,7 +5956,13 @@ function AccountsTab({
         display: "flex",
         justifyContent: "space-between"
       }
-    }, /*#__PURE__*/React.createElement("span", null, "Subtotal"), /*#__PURE__*/React.createElement("span", null, fmt(acSubtotal))), acGst > 0 && /*#__PURE__*/React.createElement("div", {
+    }, /*#__PURE__*/React.createElement("span", null, "Subtotal"), /*#__PURE__*/React.createElement("span", null, fmt(acSubtotal))), acDiscountAmt > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        color: C.purple
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Discount (", acDiscountLabel, ")"), /*#__PURE__*/React.createElement("span", null, "-", fmt(acDiscountAmt))), acGst > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         justifyContent: "space-between"
@@ -5870,8 +5986,18 @@ function AccountsTab({
         width: "100%",
         marginTop: 12
       },
-      color: C.green
-    }, "Place Order — On Account"))));
+      color: acIsComp ? C.teal : C.green
+    }, acIsComp ? "Complete — Complimentary" : "Place Order — On Account"), acPinGate && /*#__PURE__*/React.createElement(ManagerPINModal, {
+      staff: staff,
+      positions: positions,
+      permission: "authorizeDiscounts",
+      action: "mark as complimentary",
+      onSuccess: name => {
+        setAcCompAuth(name);
+        setAcPinGate(false);
+      },
+      onCancel: () => setAcPinGate(false)
+    }))));
   })(), view === "orders" && /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 0,
@@ -12896,7 +13022,9 @@ function App() {
     onSaleComplete: handleSale,
     menu: menu,
     settings: settings,
-    setKitchenOrders: setKitchenOrders
+    setKitchenOrders: setKitchenOrders,
+    staff: staff,
+    positions: positions
   }), tab === "eod" && /*#__PURE__*/React.createElement(EODTab, {
     sales: sales,
     setSales: setSales,
