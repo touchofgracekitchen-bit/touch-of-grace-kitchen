@@ -11762,6 +11762,7 @@ function MenuTab({
 }) {
   const [menuView, setMenuView] = useState("items");
   const [expandedItemId, setExpandedItemId] = useState(null);
+  const editFormRef = React.useRef(null);
   const [menuForm, setMenuForm] = useState({
     name: "",
     cat: "Beverages",
