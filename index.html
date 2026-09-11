@@ -3231,7 +3231,7 @@ function InventoryTab({
       gap: 8,
       marginBottom: 18
     }
-  }, [["stock", "Stock Levels"], ["count", "Stock Count"], ["received", "Receiving History"], ...(canSeeRecipes ? [["recipes", "Recipe Mapping"], ["components", "Proteins & Sides"]] : [])].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["stock", "Stock Levels"], ["count", "Stock Count"], ["received", "Receiving History"]].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
     key: k,
     onClick: () => setSection(k),
     style: {
@@ -3922,461 +3922,7 @@ function InventoryTab({
     style: {
       padding: "8px 12px"
     }
-  }, fmt(r.newAvgCost))))))), section === "recipes" && canSeeRecipes && /*#__PURE__*/React.createElement("div", null, editRecipeId && /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "fixed",
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: "rgba(0,0,0,0.65)",
-      zIndex: 900,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Card, {
-    style: {
-      width: 520,
-      maxHeight: "80vh",
-      overflow: "auto",
-      border: "2px solid " + C.gold
-    }
-  }, /*#__PURE__*/React.createElement(SH, null, "Recipe: ", (menu.find(m => m.id === editRecipeId) || {}).name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.lightGold,
-      borderRadius: 8,
-      padding: 10,
-      marginBottom: 14,
-      fontSize: 12,
-      color: C.charcoal
-    }
-  }, "Set the quantity of each ingredient used per 1 serving. Deducted from stock automatically on sale."), recipeLines.map((line, idx) => /*#__PURE__*/React.createElement("div", {
-    key: idx,
-    style: {
-      display: "flex",
-      gap: 8,
-      alignItems: "center",
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement("select", {
-    value: line.invId,
-    onChange: e => updateLine(idx, "invId", e.target.value),
-    style: {
-      flex: 2,
-      border: "1px solid " + C.border,
-      borderRadius: 6,
-      padding: "7px 10px",
-      fontSize: 13,
-      background: C.cream
-    }
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "-- Select ingredient --"), inventory.map(i => /*#__PURE__*/React.createElement("option", {
-    key: i.id,
-    value: i.id
-  }, i.name, " (", i.unit, ")"))), /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    value: line.qty,
-    onChange: e => updateLine(idx, "qty", e.target.value),
-    placeholder: "Qty",
-    step: "0.01",
-    style: {
-      width: 80,
-      border: "1px solid " + C.border,
-      borderRadius: 6,
-      padding: "7px 10px",
-      fontSize: 13,
-      background: C.cream
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      color: C.gray,
-      minWidth: 30
-    }
-  }, line.invId ? (inventory.find(i => i.id === parseInt(line.invId)) || {}).unit || "" : ""), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => removeLine(idx),
-    color: C.red,
-    outline: true
-  }, "X"))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      marginTop: 10
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    onClick: addRecipeLine,
-    color: C.blue,
-    outline: true,
-    small: true
-  }, "+ Add Ingredient"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginLeft: "auto",
-      display: "flex",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    onClick: saveRecipe
-  }, "Save Recipe"), /*#__PURE__*/React.createElement(Btn, {
-    onClick: () => setEditRecipeId(null),
-    color: C.charcoal,
-    outline: true
-  }, "Cancel"))))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.lightGold,
-      borderRadius: 8,
-      padding: "10px 16px",
-      marginBottom: 16,
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement("strong", null, "Recipe Mapping"), " - Link menu items to ingredients. The \"Can Make\" column shows how many servings you can make right now based on current stock levels."), /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 0,
-      overflow: "hidden"
-    }
-  }, /*#__PURE__*/React.createElement("table", {
-    style: {
-      width: "100%",
-      borderCollapse: "collapse",
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
-    style: {
-      background: C.green
-    }
-  }, ["Menu Item", "Category", "Ingredients", "Can Make Now", ""].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: {
-      color: C.white,
-      padding: "10px 12px",
-      textAlign: "left",
-      fontSize: 11
-    }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, (() => {
-    const sortedMenu = [...(menu || [])].sort((a, b) => a.cat === b.cat ? a.name.localeCompare(b.name) : a.cat.localeCompare(b.cat));
-    let lastCat = null,
-      rowIdx = 0;
-    return sortedMenu.map(item => {
-      const recipe = recipes[item.id] || [];
-      const cm = recipe.length > 0 ? getCanMake(item.id) : null;
-      const showHeader = item.cat !== lastCat;
-      lastCat = item.cat;
-      const idx = rowIdx++;
-      return /*#__PURE__*/React.createElement(React.Fragment, {
-        key: item.id
-      }, showHeader && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-        colSpan: 5,
-        style: {
-          background: C.lightGold,
-          padding: "7px 12px",
-          fontWeight: 800,
-          fontSize: 12,
-          color: C.dark,
-          borderTop: "2px solid " + C.gold
-        }
-      }, item.cat)), /*#__PURE__*/React.createElement("tr", {
-        style: {
-          background: idx % 2 === 0 ? C.white : C.cream,
-          borderBottom: "1px solid " + C.border
-        }
-      }, /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "9px 12px",
-          fontWeight: 600
-        }
-      }, item.name, !item.available && /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 10,
-          color: C.gray,
-          marginLeft: 6
-        }
-      }, "(hidden)")), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "9px 12px"
-        }
-      }, /*#__PURE__*/React.createElement(Badge, {
-        small: true
-      }, item.cat)), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "9px 12px"
-        }
-      }, recipe.length === 0 ? /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 12,
-          color: C.gray
-        }
-      }, "No recipe set") : /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 4
-        }
-      }, recipe.map((r, i) => {
-        const inv = inventory.find(x => x.id === r.invId);
-        return inv ? /*#__PURE__*/React.createElement(Badge, {
-          key: i,
-          small: true,
-          color: C.teal
-        }, r.qty, inv.unit, " ", inv.name) : null;
-      }))), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "9px 12px"
-        }
-      }, cm === null ? /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 12,
-          color: C.gray
-        }
-      }, "--") : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontWeight: 800,
-          fontSize: 15,
-          color: cm.can < 5 ? C.red : cm.can < 15 ? C.orange : C.green
-        }
-      }, cm.can), /*#__PURE__*/React.createElement("span", {
-        style: {
-          fontSize: 11,
-          color: C.charcoal
-        }
-      }, " servings"), cm.can < 20 && /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 11,
-          color: C.red
-        }
-      }, "Low: ", cm.bottleneck))), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "9px 12px"
-        }
-      }, /*#__PURE__*/React.createElement(Btn, {
-        small: true,
-        onClick: () => openRecipe(item),
-        color: recipe.length > 0 ? C.gold : C.blue
-      }, recipe.length > 0 ? "Edit" : "Set Recipe"))));
-    });
-  })())))), section === "components" && canSeeRecipes && /*#__PURE__*/React.createElement("div", null, editCompId && /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "fixed",
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: "rgba(0,0,0,0.65)",
-      zIndex: 900,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Card, {
-    style: {
-      width: 520,
-      maxHeight: "80vh",
-      overflow: "auto",
-      border: "2px solid " + C.gold
-    }
-  }, /*#__PURE__*/React.createElement(SH, null, "Recipe: ", ((editCompId.type === "protein" ? proteins : sides).find(c => c.id === editCompId.id) || {}).name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.lightGold,
-      borderRadius: 8,
-      padding: 10,
-      marginBottom: 14,
-      fontSize: 12,
-      color: C.charcoal
-    }
-  }, "Set the quantity of each ingredient used per 1 serving of this ", editCompId.type, ". Any menu item linked to it deducts these automatically."), compLines.map((line, idx) => /*#__PURE__*/React.createElement("div", {
-    key: idx,
-    style: {
-      display: "flex",
-      gap: 8,
-      alignItems: "center",
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement("select", {
-    value: line.invId,
-    onChange: e => updateCompLine(idx, "invId", e.target.value),
-    style: {
-      flex: 2,
-      border: "1px solid " + C.border,
-      borderRadius: 6,
-      padding: "7px 10px",
-      fontSize: 13,
-      background: C.cream
-    }
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "-- Select ingredient --"), inventory.map(i => /*#__PURE__*/React.createElement("option", {
-    key: i.id,
-    value: i.id
-  }, i.name, " (", i.unit, ")"))), /*#__PURE__*/React.createElement("input", {
-    type: "number",
-    value: line.qty,
-    onChange: e => updateCompLine(idx, "qty", e.target.value),
-    placeholder: "Qty",
-    step: "0.01",
-    style: {
-      width: 80,
-      border: "1px solid " + C.border,
-      borderRadius: 6,
-      padding: "7px 10px",
-      fontSize: 13,
-      background: C.cream
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      color: C.gray,
-      minWidth: 30
-    }
-  }, line.invId ? (inventory.find(i => i.id === parseInt(line.invId)) || {}).unit || "" : ""), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => removeCompLine(idx),
-    color: C.red,
-    outline: true
-  }, "X"))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      marginTop: 10
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    onClick: addCompLine,
-    color: C.blue,
-    outline: true,
-    small: true
-  }, "+ Add Ingredient"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginLeft: "auto",
-      display: "flex",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    onClick: saveComponentRecipe
-  }, "Save Recipe"), /*#__PURE__*/React.createElement(Btn, {
-    onClick: () => setEditCompId(null),
-    color: C.charcoal,
-    outline: true
-  }, "Cancel"))))), /*#__PURE__*/React.createElement(Card, {
-    style: {
-      marginBottom: 16,
-      background: C.lightGold,
-      border: "1px dashed " + C.gold
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      fontSize: 13,
-      marginBottom: 10,
-      color: C.dark
-    }
-  }, "Proteins and sides defined here can be reused across any menu item — set the cost once, update it once, and every dish using it stays accurate."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement(Sel, {
-    value: newCompType,
-    onChange: setNewCompType,
-    options: ["protein", "side"],
-    style: {
-      width: 140
-    }
-  }), /*#__PURE__*/React.createElement(Inp, {
-    value: newCompName,
-    onChange: setNewCompName,
-    placeholder: "e.g. Jerk Chicken, Rice & Peas",
-    style: {
-      flex: 1
-    }
-  }), /*#__PURE__*/React.createElement(Btn, {
-    onClick: addComponent
-  }, "+ Add"))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 16
-    }
-  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Proteins"), proteins.length === 0 ? /*#__PURE__*/React.createElement("p", {
-    style: {
-      color: C.gray,
-      fontSize: 13,
-      textAlign: "center",
-      padding: 16
-    }
-  }, "No proteins added yet.") : proteins.map(p => /*#__PURE__*/React.createElement("div", {
-    key: p.id,
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      padding: "10px 0",
-      borderBottom: "1px solid " + C.border
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      fontSize: 14
-    }
-  }, p.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: C.charcoal
-    }
-  }, (p.recipe || []).length, " ingredient", (p.recipe || []).length !== 1 ? "s" : "", " — cost/serving: ", fmt(componentCost(p)))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => openComponentRecipe("protein", p),
-    color: (p.recipe || []).length > 0 ? C.gold : C.blue
-  }, (p.recipe || []).length > 0 ? "Edit" : "Set Recipe"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => deleteComponent("protein", p.id),
-    color: C.red,
-    outline: true
-  }, "Del"))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Sides"), sides.length === 0 ? /*#__PURE__*/React.createElement("p", {
-    style: {
-      color: C.gray,
-      fontSize: 13,
-      textAlign: "center",
-      padding: 16
-    }
-  }, "No sides added yet.") : sides.map(s => /*#__PURE__*/React.createElement("div", {
-    key: s.id,
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      padding: "10px 0",
-      borderBottom: "1px solid " + C.border
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      fontSize: 14
-    }
-  }, s.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: C.charcoal
-    }
-  }, (s.recipe || []).length, " ingredient", (s.recipe || []).length !== 1 ? "s" : "", " — cost/serving: ", fmt(componentCost(s)))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => openComponentRecipe("side", s),
-    color: (s.recipe || []).length > 0 ? C.gold : C.blue
-  }, (s.recipe || []).length > 0 ? "Edit" : "Set Recipe"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => deleteComponent("side", s.id),
-    color: C.red,
-    outline: true
-  }, "Del")))))))), receiveMode && /*#__PURE__*/React.createElement("div", {
+  }, fmt(r.newAvgCost)))))))), receiveMode && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
@@ -10318,12 +9864,6 @@ function SettingsTab({
     k: "taxes",
     l: "Taxes"
   }, {
-    k: "menu",
-    l: "Menu Editor"
-  }, {
-    k: "sidesproteins",
-    l: "Sides & Proteins"
-  }, {
     k: "positions",
     l: "Positions & Permissions"
   }, {
@@ -10567,666 +10107,7 @@ function SettingsTab({
       padding: 10,
       fontSize: 12
     }
-  }, "BC standard rates: GST 5% + PST 7%. Toggle either off if you are exempt from collecting that tax.")), section === "menu" && /*#__PURE__*/React.createElement("div", null, custItemId && /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "fixed",
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: "rgba(0,0,0,0.7)",
-      zIndex: 900,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Card, {
-    style: {
-      width: 520,
-      maxHeight: "88vh",
-      overflow: "auto",
-      border: "2px solid " + C.gold
-    }
-  }, /*#__PURE__*/React.createElement(SH, null, "Side Choices for: ", (menu.find(m => m.id === custItemId) || {}).name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.lightGold,
-      borderRadius: 8,
-      padding: 10,
-      marginBottom: 14,
-      fontSize: 12,
-      color: C.charcoal
-    }
-  }, "Add choice groups customers see when ordering this item (e.g. \"Choose your starch\"). Each group has options the customer picks from. Options can have an extra charge."), custGroups.length === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "center",
-      padding: 20,
-      color: C.gray,
-      fontSize: 13
-    }
-  }, "No choice groups yet. Add one below."), custGroups.map(group => /*#__PURE__*/React.createElement(Card, {
-    key: group.id,
-    style: {
-      marginBottom: 12,
-      background: C.cream,
-      border: "1px solid " + C.border
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", {
-    style: {
-      fontSize: 14
-    }
-  }, group.label), /*#__PURE__*/React.createElement(Badge, {
-    small: true,
-    color: group.required ? C.green : C.gray,
-    style: {
-      marginLeft: 8
-    }
-  }, group.required ? "Required" : "Optional")), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => removeGroup(group.id),
-    color: C.red,
-    outline: true
-  }, "Remove Group")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 6,
-      marginBottom: 8
-    }
-  }, group.options.map(opt => /*#__PURE__*/React.createElement("div", {
-    key: opt.name,
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 4,
-      background: C.white,
-      border: "1px solid " + C.border,
-      borderRadius: 6,
-      padding: "4px 10px",
-      fontSize: 12
-    }
-  }, /*#__PURE__*/React.createElement("span", null, opt.name, opt.price > 0 ? " (+" + fmt(opt.price) + ")" : ""), (opt.sideIds || []).map(sid => /*#__PURE__*/React.createElement(Badge, {
-    key: sid,
-    small: true,
-    color: C.teal
-  }, (sides.find(s => s.id === sid) || {}).name || "side")), opt.proteinId && /*#__PURE__*/React.createElement(Badge, {
-    small: true,
-    color: C.orange
-  }, (proteins.find(p => p.id === opt.proteinId) || {}).name || "protein"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => removeOption(group.id, opt.name),
-    style: {
-      background: "none",
-      border: "none",
-      color: C.red,
-      cursor: "pointer",
-      fontWeight: 700,
-      fontSize: 13,
-      lineHeight: 1
-    }
-  }, "x")))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginTop: 6
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.charcoal,
-      marginBottom: 4
-    }
-  }, "Tap a side or protein to add it as a choice — nothing to type:"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 6,
-      marginBottom: 8
-    }
-  }, (sides || []).map(s => {
-    const already = group.options.some(o => o.name === s.name);
-    return /*#__PURE__*/React.createElement("button", {
-      key: s.id,
-      disabled: already,
-      onClick: () => quickAddSideOption(group.id, s),
-      style: {
-        background: already ? C.cream : C.white,
-        border: "1px solid " + (already ? C.border : C.teal),
-        color: already ? C.gray : C.teal,
-        borderRadius: 6,
-        padding: "5px 10px",
-        fontSize: 12,
-        cursor: already ? "default" : "pointer",
-        fontFamily: "inherit"
-      }
-    }, already ? "✓ " : "+ ", s.name);
-  }), (proteins || []).map(p => {
-    const already = group.options.some(o => o.name === p.name);
-    return /*#__PURE__*/React.createElement("button", {
-      key: p.id,
-      disabled: already,
-      onClick: () => quickAddProteinOption(group.id, p),
-      style: {
-        background: already ? C.cream : C.white,
-        border: "1px solid " + (already ? C.border : C.orange),
-        color: already ? C.gray : C.orange,
-        borderRadius: 6,
-        padding: "5px 10px",
-        fontSize: 12,
-        cursor: already ? "default" : "pointer",
-        fontFamily: "inherit"
-      }
-    }, already ? "✓ " : "+ ", p.name);
-  }), (sides || []).length === 0 && (proteins || []).length === 0 && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 11,
-      color: C.gray
-    }
-  }, "No sides or proteins yet — add some under Settings → Sides & Proteins")), pendingProteinOpt && pendingProteinOpt.gid === group.id && /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.lightGold,
-      border: "1px solid " + C.gold,
-      borderRadius: 8,
-      padding: 10,
-      marginBottom: 8,
-      display: "flex",
-      gap: 8,
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      fontWeight: 700
-    }
-  }, pendingProteinOpt.protein.name, " — extra charge for this choice:"), /*#__PURE__*/React.createElement(Inp, {
-    type: "number",
-    value: pendingProteinPrice,
-    onChange: setPendingProteinPrice,
-    placeholder: "0.00",
-    style: {
-      width: 90
-    }
-  }), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: confirmProteinOption
-  }, "Add"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => setPendingProteinOpt(null),
-    color: C.charcoal,
-    outline: true
-  }, "Cancel")), addingOptFor === group.id ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.cream,
-      borderRadius: 8,
-      padding: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.charcoal,
-      marginBottom: 6
-    }
-  }, "For a choice that isn't a real ingredient (e.g. \"No thanks\"):"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      alignItems: "center",
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement(Inp, {
-    value: newOptName,
-    onChange: setNewOptName,
-    placeholder: "Option name",
-    style: {
-      flex: 2
-    }
-  }), /*#__PURE__*/React.createElement(Inp, {
-    type: "number",
-    value: newOptPrice,
-    onChange: setNewOptPrice,
-    placeholder: "Extra $",
-    style: {
-      width: 80
-    }
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => addOption(group.id)
-  }, "Add"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => setAddingOptFor(null),
-    color: C.charcoal,
-    outline: true
-  }, "Cancel"))) : /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      setAddingOptFor(group.id);
-      setNewOptName("");
-      setNewOptPrice("0");
-    },
-    color: C.charcoal,
-    outline: true
-  }, "+ Add a non-ingredient choice")))), /*#__PURE__*/React.createElement(Card, {
-    style: {
-      background: C.lightGold,
-      border: "1px dashed " + C.gold,
-      marginBottom: 14
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontWeight: 700,
-      fontSize: 13,
-      marginBottom: 10,
-      color: C.dark
-    }
-  }, "Add a new choice group:"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement(Inp, {
-    value: newGroupLabel,
-    onChange: setNewGroupLabel,
-    placeholder: "e.g. \"Choose your starch\"",
-    style: {
-      flex: 1
-    }
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      whiteSpace: "nowrap"
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: newGroupReq,
-    onChange: e => setNewGroupReq(e.target.checked),
-    id: "greq"
-  }), /*#__PURE__*/React.createElement("label", {
-    htmlFor: "greq",
-    style: {
-      fontSize: 12
-    }
-  }, "Required")), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: addGroup
-  }, "Add Group")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.charcoal
-    }
-  }, "After adding the group, add options to it above (e.g. \"Rice & Peas\", \"White Rice\").")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    onClick: saveCustGroups,
-    style: {
-      flex: 1
-    }
-  }, "Save Choices"), /*#__PURE__*/React.createElement(Btn, {
-    onClick: () => setCustItemId(null),
-    color: C.charcoal,
-    outline: true
-  }, "Cancel")))), /*#__PURE__*/React.createElement(Card, {
-    style: {
-      marginBottom: 14
-    }
-  }, /*#__PURE__*/React.createElement(SH, null, "Add New Menu Item"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr 1fr",
-      gap: 10,
-      marginBottom: 10
-    }
-  }, /*#__PURE__*/React.createElement(Inp, {
-    value: menuForm.name,
-    onChange: v => setMenuForm({
-      ...menuForm,
-      name: v
-    }),
-    placeholder: "Item name *"
-  }), /*#__PURE__*/React.createElement(Sel, {
-    value: menuForm.cat,
-    onChange: v => setMenuForm({
-      ...menuForm,
-      cat: v
-    }),
-    options: MENU_CATS
-  }), /*#__PURE__*/React.createElement(Inp, {
-    type: "number",
-    value: menuForm.price,
-    onChange: v => setMenuForm({
-      ...menuForm,
-      price: v
-    }),
-    placeholder: "Price ($) *"
-  }), /*#__PURE__*/React.createElement(Inp, {
-    value: menuForm.allergens,
-    onChange: v => setMenuForm({
-      ...menuForm,
-      allergens: v
-    }),
-    placeholder: "Allergens (comma separated)"
-  }), /*#__PURE__*/React.createElement(Inp, {
-    value: menuForm.comesWith,
-    onChange: v => setMenuForm({
-      ...menuForm,
-      comesWith: v
-    }),
-    placeholder: "Comes with (comma separated)"
-  }), menuProteinAddMode ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement(Inp, {
-    value: menuNewProteinName,
-    onChange: setMenuNewProteinName,
-    placeholder: "New protein name",
-    style: {
-      flex: 1
-    }
-  }), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      if (!menuNewProteinName.trim()) return;
-      const np = {
-        id: Date.now(),
-        name: menuNewProteinName.trim(),
-        recipe: []
-      };
-      setProteins([...proteins, np]);
-      setMenuForm({
-        ...menuForm,
-        proteinId: String(np.id)
-      });
-      setMenuNewProteinName("");
-      setMenuProteinAddMode(false);
-    }
-  }, "Add"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => setMenuProteinAddMode(false),
-    color: C.charcoal,
-    outline: true
-  }, "Cancel")) : /*#__PURE__*/React.createElement("select", {
-    value: menuForm.proteinId,
-    onChange: e => {
-      if (e.target.value === "__new__") setMenuProteinAddMode(true);else setMenuForm({
-        ...menuForm,
-        proteinId: e.target.value
-      });
-    },
-    style: {
-      border: "1px solid " + C.border,
-      borderRadius: 6,
-      padding: "8px 10px",
-      fontSize: 14,
-      background: C.cream,
-      fontFamily: "inherit"
-    }
-  }, /*#__PURE__*/React.createElement("option", {
-    value: ""
-  }, "No default protein"), (proteins || []).map(p => /*#__PURE__*/React.createElement("option", {
-    key: p.id,
-    value: p.id
-  }, "Protein: ", p.name)), /*#__PURE__*/React.createElement("option", {
-    value: "__new__"
-  }, "+ Add new protein...")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.charcoal,
-      marginBottom: 4
-    }
-  }, "Default sides always included:"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 6
-    }
-  }, (sides || []).length === 0 ? /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 11,
-      color: C.gray
-    }
-  }, "No sides defined yet — add some in Inventory → Proteins & Sides") : (sides || []).map(s => {
-    const checked = (menuForm.sideIds || []).includes(s.id);
-    return /*#__PURE__*/React.createElement("label", {
-      key: s.id,
-      style: {
-        display: "flex",
-        alignItems: "center",
-        gap: 4,
-        fontSize: 11,
-        background: checked ? C.lightGold : C.white,
-        border: "1px solid " + C.border,
-        borderRadius: 6,
-        padding: "3px 8px",
-        cursor: "pointer"
-      }
-    }, /*#__PURE__*/React.createElement("input", {
-      type: "checkbox",
-      checked: checked,
-      onChange: () => {
-        const next = checked ? (menuForm.sideIds || []).filter(id => id !== s.id) : [...(menuForm.sideIds || []), s.id];
-        setMenuForm({
-          ...menuForm,
-          sideIds: next
-        });
-      }
-    }), s.name);
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 12,
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: menuForm.available,
-    onChange: e => setMenuForm({
-      ...menuForm,
-      available: e.target.checked
-    }),
-    id: "mav"
-  }), /*#__PURE__*/React.createElement("label", {
-    htmlFor: "mav",
-    style: {
-      fontSize: 12
-    }
-  }, "Available now")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: addMenuItem,
-    color: editingMenuId ? C.gold : C.green
-  }, editingMenuId ? 'Save Changes' : 'Add Item'), editingMenuId && /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      setEditingMenuId(null);
-      setMenuForm({
-        name: '',
-        cat: 'Beverages',
-        price: '',
-        allergens: '',
-        available: true,
-        comesWith: '',
-        customGroups: [],
-        proteinId: '',
-        sideIds: []
-      });
-    },
-    color: C.charcoal,
-    outline: true
-  }, "Cancel")))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 12,
-      color: C.charcoal,
-      background: C.cream,
-      borderRadius: 6,
-      padding: 8
-    }
-  }, "After adding, use the \"Side Choices\" button on the item row to set up any customer choices (starch, protein add-ons, etc).")), /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 0,
-      overflow: "hidden"
-    }
-  }, /*#__PURE__*/React.createElement("table", {
-    style: {
-      width: "100%",
-      borderCollapse: "collapse",
-      fontSize: 12
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
-    style: {
-      background: C.green
-    }
-  }, ["Item", "Cat", "Price", "Comes With", "Side Choices", "Status", ""].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: {
-      color: C.white,
-      padding: "8px 12px",
-      textAlign: "left"
-    }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, (() => {
-    const sorted = [...menu].sort((a, b) => a.cat === b.cat ? a.name.localeCompare(b.name) : a.cat.localeCompare(b.cat));
-    let lastCat = null,
-      rowIdx = 0;
-    return sorted.map(item => {
-      const showHeader = item.cat !== lastCat;
-      lastCat = item.cat;
-      const i = rowIdx++;
-      return /*#__PURE__*/React.createElement(React.Fragment, {
-        key: item.id
-      }, showHeader && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-        colSpan: 7,
-        style: {
-          background: C.lightGold,
-          padding: "7px 12px",
-          fontWeight: 800,
-          fontSize: 12,
-          color: C.dark,
-          borderTop: "2px solid " + C.gold
-        }
-      }, item.cat)), /*#__PURE__*/React.createElement("tr", {
-        style: {
-          background: i % 2 === 0 ? C.white : C.cream,
-          borderBottom: "1px solid " + C.border
-        }
-      }, /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "8px 12px",
-          fontWeight: 600
-        }
-      }, item.name), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "8px 12px"
-        }
-      }, /*#__PURE__*/React.createElement(Badge, {
-        small: true
-      }, item.cat)), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "8px 12px",
-          fontWeight: 700,
-          color: C.green
-        }
-      }, fmt(item.price)), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "8px 12px",
-          fontSize: 11,
-          color: C.teal
-        }
-      }, (item.comesWith || []).join(", ") || "--"), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "8px 12px"
-        }
-      }, (item.customGroups || []).length > 0 ? /*#__PURE__*/React.createElement("div", {
-        style: {
-          display: "flex",
-          alignItems: "center",
-          gap: 6
-        }
-      }, /*#__PURE__*/React.createElement(Badge, {
-        small: true,
-        color: C.green
-      }, (item.customGroups || []).length, " group", (item.customGroups || []).length > 1 ? "s" : ""), /*#__PURE__*/React.createElement(Btn, {
-        small: true,
-        onClick: () => openCustEditor(item),
-        color: C.gold
-      }, "Edit")) : /*#__PURE__*/React.createElement(Btn, {
-        small: true,
-        onClick: () => openCustEditor(item),
-        color: C.blue,
-        outline: true
-      }, "+ Add")), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: "8px 12px"
-        }
-      }, /*#__PURE__*/React.createElement("button", {
-        onClick: () => setMenu(menu.map(m => m.id === item.id ? {
-          ...m,
-          available: !m.available
-        } : m)),
-        style: {
-          background: item.available ? C.green : C.red,
-          color: C.white,
-          border: "none",
-          borderRadius: 12,
-          padding: "3px 10px",
-          fontSize: 11,
-          cursor: "pointer",
-          fontWeight: 700
-        }
-      }, item.available ? "Available" : "Hidden")), /*#__PURE__*/React.createElement("td", {
-        style: {
-          padding: '8px 12px',
-          display: 'flex',
-          gap: 4
-        }
-      }, /*#__PURE__*/React.createElement(Btn, {
-        small: true,
-        onClick: () => {
-          setEditingMenuId(item.id);
-          setMenuForm({
-            name: item.name,
-            cat: item.cat,
-            price: String(item.price),
-            allergens: (item.allergens || []).join(', '),
-            available: item.available,
-            comesWith: (item.comesWith || []).join(', '),
-            customGroups: item.customGroups || [],
-            proteinId: item.proteinId || "",
-            sideIds: item.sideIds || []
-          });
-        },
-        color: C.blue,
-        outline: true
-      }, "Edit"), /*#__PURE__*/React.createElement(Btn, {
-        small: true,
-        onClick: () => setMenu(menu.filter(m => m.id !== item.id)),
-        color: C.red,
-        outline: true
-      }, "Del"))));
-    });
-  })())))), section === "positions" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+  }, "BC standard rates: GST 5% + PST 7%. Toggle either off if you are exempt from collecting that tax.")), section === "positions" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 14,
       background: C.lightGold,
@@ -11401,221 +10282,7 @@ function SettingsTab({
     }),
     color: C.red,
     outline: true
-  }, "Remove"))))), section === "sidesproteins" && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 16
-    }
-  }, /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Sides"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.lightGold,
-      borderRadius: 8,
-      padding: 8,
-      marginBottom: 12,
-      fontSize: 11,
-      color: C.charcoal
-    }
-  }, "Just the name here — set what ingredients each one uses in Inventory → Proteins & Sides."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      marginBottom: 14
-    }
-  }, /*#__PURE__*/React.createElement(Inp, {
-    value: newSideName,
-    onChange: setNewSideName,
-    placeholder: "New side name"
-  }), /*#__PURE__*/React.createElement(Btn, {
-    onClick: () => {
-      if (newSideName.trim()) {
-        setSides([...sides, {
-          id: Date.now(),
-          name: newSideName.trim(),
-          recipe: []
-        }]);
-        setNewSideName("");
-      }
-    },
-    style: {
-      whiteSpace: "nowrap"
-    }
-  }, "Add")), sides.length === 0 && /*#__PURE__*/React.createElement("p", {
-    style: {
-      color: C.gray,
-      fontSize: 13,
-      textAlign: "center",
-      padding: 10
-    }
-  }, "No sides yet."), sides.map(s => /*#__PURE__*/React.createElement("div", {
-    key: s.id,
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      background: C.cream,
-      borderRadius: 8,
-      padding: "10px 14px",
-      marginBottom: 8
-    }
-  }, renamingComp && renamingComp.type === "side" && renamingComp.id === s.id ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      flex: 1
-    }
-  }, /*#__PURE__*/React.createElement(Inp, {
-    value: renameVal,
-    onChange: setRenameVal,
-    style: {
-      flex: 1
-    }
-  }), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      setSides(sides.map(x => x.id === s.id ? {
-        ...x,
-        name: renameVal.trim() || x.name
-      } : x));
-      setRenamingComp(null);
-    }
-  }, "Save"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => setRenamingComp(null),
-    color: C.charcoal,
-    outline: true
-  }, "Cancel")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 600
-    }
-  }, s.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      setRenamingComp({
-        type: "side",
-        id: s.id
-      });
-      setRenameVal(s.name);
-    },
-    color: C.blue,
-    outline: true
-  }, "Rename"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      if (window.confirm("Remove " + s.name + "? Menu items linking to it will need a new selection.")) setSides(sides.filter(x => x.id !== s.id));
-    },
-    color: C.red,
-    outline: true
-  }, "Remove")))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Proteins"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.lightGold,
-      borderRadius: 8,
-      padding: 8,
-      marginBottom: 12,
-      fontSize: 11,
-      color: C.charcoal
-    }
-  }, "Just the name here — set what ingredients each one uses in Inventory → Proteins & Sides."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      marginBottom: 14
-    }
-  }, /*#__PURE__*/React.createElement(Inp, {
-    value: newProteinName,
-    onChange: setNewProteinName,
-    placeholder: "New protein name"
-  }), /*#__PURE__*/React.createElement(Btn, {
-    onClick: () => {
-      if (newProteinName.trim()) {
-        setProteins([...proteins, {
-          id: Date.now(),
-          name: newProteinName.trim(),
-          recipe: []
-        }]);
-        setNewProteinName("");
-      }
-    },
-    style: {
-      whiteSpace: "nowrap"
-    }
-  }, "Add")), proteins.length === 0 && /*#__PURE__*/React.createElement("p", {
-    style: {
-      color: C.gray,
-      fontSize: 13,
-      textAlign: "center",
-      padding: 10
-    }
-  }, "No proteins yet."), proteins.map(p => /*#__PURE__*/React.createElement("div", {
-    key: p.id,
-    style: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      background: C.cream,
-      borderRadius: 8,
-      padding: "10px 14px",
-      marginBottom: 8
-    }
-  }, renamingComp && renamingComp.type === "protein" && renamingComp.id === p.id ? /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      flex: 1
-    }
-  }, /*#__PURE__*/React.createElement(Inp, {
-    value: renameVal,
-    onChange: setRenameVal,
-    style: {
-      flex: 1
-    }
-  }), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      setProteins(proteins.map(x => x.id === p.id ? {
-        ...x,
-        name: renameVal.trim() || x.name
-      } : x));
-      setRenamingComp(null);
-    }
-  }, "Save"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => setRenamingComp(null),
-    color: C.charcoal,
-    outline: true
-  }, "Cancel")) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 600
-    }
-  }, p.name), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      setRenamingComp({
-        type: "protein",
-        id: p.id
-      });
-      setRenameVal(p.name);
-    },
-    color: C.blue,
-    outline: true
-  }, "Rename"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      if (window.confirm("Remove " + p.name + "? Menu items linking to it will need a new selection.")) setProteins(proteins.filter(x => x.id !== p.id));
-    },
-    color: C.red,
-    outline: true
-  }, "Remove"))))))), section === "suppliers" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Suppliers"), /*#__PURE__*/React.createElement("div", {
+  }, "Remove"))))), section === "suppliers" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Suppliers"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -12304,16 +10971,116 @@ function MenuTab({
       invId: invId["Ice Cream Rum Raisin"],
       qty: 1
     }], "costed using Rum Raisin; Super Hero flavor also in Inventory as its own item");
+    let nextMenu = [...menu];
+
+    // -- Standard "Choice of starch" + "Steamed Vegetable" side groups for
+    //    every Mains/Special that doesn't already have full groups set --
+    const sideOptByName = n => {
+      const s = sides.find(x => x.name.toLowerCase() === n.toLowerCase());
+      return s ? {
+        name: s.name,
+        price: 0,
+        sideIds: [s.id]
+      } : null;
+    };
+    const standardStarchOptions = ["White Rice", "Rice & Peas", "Festival", "Plantains"].map(sideOptByName).filter(Boolean);
+    const vegOpt = sideOptByName("Vegetable");
+    const groupsSetUp = [],
+      groupsSkipped = [];
+    // Every Mains and Donna's Specials item gets the same "Choice of
+    // starch + Steamed Vegetable" side options, except Rasta Pasta (which
+    // gets its own protein add-on below instead). This applies by
+    // category, not a fixed name list, so it reaches every dish in those
+    // categories — nothing is renamed, removed, or merged; duplicates (if
+    // any) are left exactly as they are for you to sort out on your own.
+    nextMenu.forEach(item => {
+      if (item.name.toLowerCase() === "rasta pasta") return;
+      if (item.cat !== "Mains" && item.cat !== "Donna's Specials") return;
+      if (item.customGroups && item.customGroups.length >= 2) {
+        return;
+      } // already fully set up
+      const newGroups = [{
+        id: Date.now() + Math.floor(Math.random() * 100000),
+        label: "Choice of starch",
+        required: true,
+        options: standardStarchOptions
+      }, {
+        id: Date.now() + Math.floor(Math.random() * 100000) + 1,
+        label: "Steamed Vegetable",
+        required: true,
+        options: vegOpt ? [vegOpt] : [{
+          name: "Steamed Vegetable",
+          price: 0
+        }]
+      }];
+      nextMenu = nextMenu.map(m => m.id === item.id ? {
+        ...m,
+        customGroups: newGroups
+      } : m);
+      groupsSetUp.push(item.name + " ($" + item.price.toFixed(2) + ")");
+    });
+
+    // -- Rasta Pasta's protein add-on: No protein / Jerk Chicken +$3 / Oxtail +$5 --
+    let nextProteins = [...proteins];
+    const ensureProtein = (name, invName) => {
+      let existing = nextProteins.find(p => p.name.toLowerCase() === name.toLowerCase());
+      const iid = invId[invName];
+      if (!existing) {
+        existing = {
+          id: Date.now() + Math.floor(Math.random() * 100000),
+          name,
+          recipe: iid ? [{
+            invId: iid,
+            qty: 1
+          }] : []
+        };
+        nextProteins = [...nextProteins, existing];
+      }
+      return existing.id;
+    };
+    const jerkProteinId = ensureProtein("Jerk Chicken", "Chicken Leg Quarter");
+    const oxtailProteinId = ensureProtein("Oxtail", "Oxtail (raw)");
+    const rastaItem = nextMenu.find(m => m.name.toLowerCase() === "rasta pasta");
+    let rastaUpdated = false;
+    if (rastaItem) {
+      const proteinGroup = {
+        id: Date.now() + Math.floor(Math.random() * 100000),
+        label: "Add a protein?",
+        required: true,
+        options: [{
+          name: "No protein",
+          price: 0
+        }, {
+          name: "Jerk Chicken",
+          price: 3,
+          proteinId: jerkProteinId
+        }, {
+          name: "Oxtail",
+          price: 5,
+          proteinId: oxtailProteinId
+        }]
+      };
+      nextMenu = nextMenu.map(m => m.id === rastaItem.id ? {
+        ...m,
+        customGroups: [proteinGroup]
+      } : m);
+      rastaUpdated = true;
+    }
     setInventory(nextInventory);
     setSides(nextSides);
     setPackaging(nextPackaging);
     setRecipes(nextRecipes);
+    setProteins(nextProteins);
+    setMenu(nextMenu);
     setImportResult({
       linked,
       skipped,
       alreadySet,
       invCreated,
-      invUpdated
+      invUpdated,
+      groupsSetUp,
+      groupsSkipped,
+      rastaUpdated
     });
   };
 
@@ -12421,10 +11188,10 @@ function MenuTab({
       fontSize: 13,
       color: C.charcoal
     }
-  }, /*#__PURE__*/React.createElement("strong", null, "Import from your costing spreadsheet"), " — adds ingredients and links recipes for dishes with confirmed costs (Fries, Rice, Jerk Chicken, Fried Chicken, Chicken Strips, Hot Dog, Rasta Pasta, Oxtail, Ice Cream). Only creates new inventory items and only links recipes onto menu items that already exist by name — nothing gets deleted or overwritten."), /*#__PURE__*/React.createElement(Btn, {
+  }, /*#__PURE__*/React.createElement("strong", null, "Finish Menu Setup"), " — imports your costing spreadsheet (ingredients + recipes), adds \"Choice of starch + Steamed Vegetable\" to Jerk Chicken, Barbi-Fry Chicken, and Stew Peas (Special) if they don't already have it, and sets up Rasta Pasta's protein add-on (No protein / Jerk Chicken +$3 / Oxtail +$5). This never removes or renames anything on its own."), /*#__PURE__*/React.createElement(Btn, {
     onClick: importCostingSheet,
     color: C.blue
-  }, "Import Costing Sheet")), importResult && /*#__PURE__*/React.createElement("div", {
+  }, "Finish Menu Setup")), importResult && /*#__PURE__*/React.createElement("div", {
     style: {
       marginTop: 14,
       background: C.white,
@@ -12432,7 +11199,31 @@ function MenuTab({
       padding: 12,
       fontSize: 12
     }
-  }, importResult.invCreated.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, importResult.groupsSetUp && importResult.groupsSetUp.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: C.green
+    }
+  }, "Side choices added to:"), " ", importResult.groupsSetUp.join(", ")), importResult.groupsSkipped && importResult.groupsSkipped.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: C.charcoal
+    }
+  }, "Not found (no changes):"), " ", importResult.groupsSkipped.join(", ")), importResult.rastaUpdated && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: C.green
+    }
+  }, "Rasta Pasta protein add-on set up.")), importResult.invCreated.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 6
     }
