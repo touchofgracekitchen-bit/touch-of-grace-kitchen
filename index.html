@@ -9615,7 +9615,7 @@ function ReportsTab({
       marginBottom: 16,
       fontSize: 13
     }
-  }, "Cost calculations use each ingredient's real average cost (blended across every delivery you've received) — the same number shown as \"Avg Cost\" in Inventory. If a \"Cost to Make\" shows an orange warning, one or more ingredients in that recipe don't have a cost set yet, so the true cost is higher than shown."), /*#__PURE__*/React.createElement(Card, {
+  }, "Cost calculations use each ingredient's real average cost (blended across every delivery you've received) when it's available. If you haven't received an ingredient yet, it falls back to the average of the supplier prices you've entered for it instead — so a cost still shows even before the first delivery. If a \"Cost to Make\" shows an orange warning, that ingredient has neither an average cost nor any supplier price entered yet."), /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 0,
       overflow: "hidden",
@@ -9644,11 +9644,15 @@ function ReportsTab({
     let missingCost = false;
     const cost = recipe.reduce((s, ing) => {
       const inv = (inventory || []).find(x => x.id === ing.invId);
-      if (!inv || !inv.avgCost) {
+      if (!inv) {
         missingCost = true;
         return s;
       }
-      return s + inv.avgCost * ing.qty;
+      if (inv.avgCost) return s + inv.avgCost * ing.qty;
+      const priceVals = Object.values(inv.prices || {});
+      if (priceVals.length) return s + priceVals.reduce((a, b) => a + b, 0) / priceVals.length * ing.qty;
+      missingCost = true;
+      return s;
     }, 0);
     const margin = item.price - cost;
     const marginPct = item.price > 0 ? margin / item.price * 100 : 0;
@@ -11752,6 +11756,7 @@ function MenuTab({
   packaging,
   setPackaging,
   inventory,
+  setInventory,
   settings,
   setSettings
 }) {
@@ -12009,24 +12014,351 @@ function MenuTab({
     return s + (ing && ing.avgCost ? ing.avgCost * r.qty : 0);
   }, 0);
 
+  // -- One-time, button-triggered import from your costing spreadsheet --
+  // Only ever ADDS inventory items and reusable components, and only ever
+  // LINKS a recipe onto a menu item that already exists by name. Never
+  // creates a menu item, never deletes anything, never overwrites a
+  // recipe/cost you've already set yourself.
+  const [importResult, setImportResult] = useState(null);
+  const importCostingSheet = () => {
+    const findMenuItem = names => {
+      for (const n of names) {
+        const hit = menu.find(m => m.name.toLowerCase() === n.toLowerCase());
+        if (hit) return hit;
+      }
+      return null;
+    };
+    let nextInventory = [...inventory];
+    const invUpserts = [{
+      name: "Fries (frozen)",
+      unit: "serving",
+      avgCost: 2.068519,
+      stock: 54
+    }, {
+      name: "Ketchup Portion",
+      unit: "packet",
+      avgCost: 0.058540,
+      stock: 500
+    }, {
+      name: "Rice, Long Grain Parboiled",
+      unit: "serving",
+      avgCost: 0.498602,
+      stock: 118
+    }, {
+      name: "Ranch Dressing Portion",
+      unit: "packet",
+      avgCost: 0.252550,
+      stock: 200
+    }, {
+      name: "Thousand Island Dressing Portion",
+      unit: "packet",
+      avgCost: 0.255750,
+      stock: 200
+    }, {
+      name: "Plantain",
+      unit: "serving",
+      avgCost: 0.793834,
+      stock: 41
+    }, {
+      name: "Oxtail (raw)",
+      unit: "serving",
+      avgCost: 6.742714,
+      stock: 22
+    }, {
+      name: "Chicken Leg Quarter",
+      unit: "leg quarter",
+      avgCost: 1.975270,
+      stock: 148
+    }, {
+      name: "Chicken Cut 9 Fryer",
+      unit: "serving",
+      avgCost: 3.585714,
+      stock: 151
+    }, {
+      name: "Chicken Tender Breaded",
+      unit: "serving",
+      avgCost: 2.543400,
+      stock: 33
+    }, {
+      name: "Hot Dog Wiener",
+      unit: "wiener",
+      avgCost: 0.857143,
+      stock: 56
+    }, {
+      name: "Hot Dog Bun",
+      unit: "bun",
+      avgCost: 0.903646,
+      stock: 96
+    }, {
+      name: "Mustard Portion",
+      unit: "packet",
+      avgCost: 0.043194,
+      stock: 504
+    }, {
+      name: "Relish Portion",
+      unit: "packet",
+      avgCost: 0.055992,
+      stock: 504
+    }, {
+      name: "Pasta Penne Rigate",
+      unit: "serving",
+      avgCost: 0.301066,
+      stock: 159
+    }, {
+      name: "Ice Cream Rum Raisin",
+      unit: "scoop",
+      avgCost: 0.360314,
+      stock: 96
+    }, {
+      name: "Ice Cream Super Hero",
+      unit: "scoop",
+      avgCost: 0.373356,
+      stock: 96
+    }, {
+      name: "Take-out Container",
+      unit: "container",
+      avgCost: 0.362,
+      stock: 0
+    }, {
+      name: "Cutlery+Napkin Kit",
+      unit: "kit",
+      avgCost: 0.376975,
+      stock: 400
+    }, {
+      name: "Hot Cup+Lid (8oz)",
+      unit: "cup",
+      avgCost: 0.295,
+      stock: 0
+    }];
+    const invId = {};
+    const invCreated = [],
+      invUpdated = [];
+    invUpserts.forEach(item => {
+      let existing = nextInventory.find(i => i.name.toLowerCase() === item.name.toLowerCase());
+      if (!existing) {
+        existing = {
+          id: Date.now() + Math.floor(Math.random() * 1000000),
+          name: item.name,
+          unit: item.unit,
+          avgCost: item.avgCost,
+          stock: item.stock,
+          cat: "Costing Import",
+          prices: {}
+        };
+        nextInventory = [...nextInventory, existing];
+        invCreated.push(item.name);
+      } else if (!existing.avgCost) {
+        nextInventory = nextInventory.map(i => i.id === existing.id ? {
+          ...i,
+          avgCost: item.avgCost,
+          stock: i.stock || item.stock
+        } : i);
+        invUpdated.push(item.name);
+      }
+      invId[item.name] = existing.id;
+    });
+    let nextSides = [...sides];
+    const ensureSide = (name, recipeLines) => {
+      let existing = nextSides.find(s => s.name.toLowerCase() === name.toLowerCase());
+      if (!existing) {
+        existing = {
+          id: Date.now() + Math.floor(Math.random() * 1000000),
+          name,
+          recipe: recipeLines
+        };
+        nextSides = [...nextSides, existing];
+      } else if (!existing.recipe || existing.recipe.length === 0) {
+        nextSides = nextSides.map(s => s.id === existing.id ? {
+          ...s,
+          recipe: recipeLines
+        } : s);
+      }
+    };
+    ensureSide("Fries", [{
+      invId: invId["Fries (frozen)"],
+      qty: 1
+    }, {
+      invId: invId["Ketchup Portion"],
+      qty: 1
+    }]);
+    ensureSide("White Rice", [{
+      invId: invId["Rice, Long Grain Parboiled"],
+      qty: 1
+    }]);
+    ensureSide("Rice & Peas", [{
+      invId: invId["Rice, Long Grain Parboiled"],
+      qty: 1
+    }]);
+    ensureSide("Plantains", [{
+      invId: invId["Plantain"],
+      qty: 1
+    }]);
+    let nextPackaging = [...packaging];
+    const ensurePackaging = (name, recipeLines) => {
+      let existing = nextPackaging.find(p => p.name.toLowerCase() === name.toLowerCase());
+      if (!existing) {
+        existing = {
+          id: Date.now() + Math.floor(Math.random() * 1000000),
+          name,
+          recipe: recipeLines
+        };
+        nextPackaging = [...nextPackaging, existing];
+      } else if (!existing.recipe || existing.recipe.length === 0) {
+        nextPackaging = nextPackaging.map(p => p.id === existing.id ? {
+          ...p,
+          recipe: recipeLines
+        } : p);
+      }
+    };
+    ensurePackaging("Take-out Container", [{
+      invId: invId["Take-out Container"],
+      qty: 1
+    }]);
+    ensurePackaging("Cutlery Kit", [{
+      invId: invId["Cutlery+Napkin Kit"],
+      qty: 1
+    }]);
+    ensurePackaging("Hot Cup + Lid", [{
+      invId: invId["Hot Cup+Lid (8oz)"],
+      qty: 1
+    }]);
+    let nextRecipes = {
+      ...recipes
+    };
+    const linked = [],
+      skipped = [],
+      alreadySet = [];
+    const linkRecipe = (names, recipeLines, note) => {
+      const item = findMenuItem(names);
+      if (!item) {
+        skipped.push(names[0]);
+        return;
+      }
+      if (nextRecipes[item.id] && nextRecipes[item.id].length > 0) {
+        alreadySet.push(item.name);
+        return;
+      }
+      nextRecipes = {
+        ...nextRecipes,
+        [item.id]: recipeLines
+      };
+      linked.push(item.name + (note ? " — " + note : ""));
+    };
+    linkRecipe(["Fried Chicken"], [{
+      invId: invId["Chicken Cut 9 Fryer"],
+      qty: 1
+    }], "base only, batter/seasoning not yet quantified");
+    linkRecipe(["Barbi-Fry Chicken", "Barbi-Fried Chicken"], [{
+      invId: invId["Chicken Cut 9 Fryer"],
+      qty: 1
+    }], "base only, same as Fried Chicken");
+    linkRecipe(["Jerk Chicken"], [{
+      invId: invId["Chicken Leg Quarter"],
+      qty: 1
+    }], "base only, seasoning/sauce not yet quantified");
+    linkRecipe(["Chicken Strips"], [{
+      invId: invId["Chicken Tender Breaded"],
+      qty: 1
+    }]);
+    linkRecipe(["Hot Dog"], [{
+      invId: invId["Hot Dog Wiener"],
+      qty: 1
+    }, {
+      invId: invId["Hot Dog Bun"],
+      qty: 1
+    }, {
+      invId: invId["Ketchup Portion"],
+      qty: 1
+    }, {
+      invId: invId["Mustard Portion"],
+      qty: 1
+    }, {
+      invId: invId["Relish Portion"],
+      qty: 1
+    }]);
+    linkRecipe(["Rasta Pasta"], [{
+      invId: invId["Pasta Penne Rigate"],
+      qty: 1
+    }], "pasta only, sauce/veg/protein not yet quantified");
+    linkRecipe(["Oxtail"], [{
+      invId: invId["Oxtail (raw)"],
+      qty: 1
+    }], "12oz portion assumed, unconfirmed");
+    linkRecipe(["White Rice", "White Rice (side)"], [{
+      invId: invId["Rice, Long Grain Parboiled"],
+      qty: 1
+    }]);
+    linkRecipe(["Rice & Peas", "Rice & Peas (side)"], [{
+      invId: invId["Rice, Long Grain Parboiled"],
+      qty: 1
+    }], "rice only, beans/coconut milk/seasoning not yet added");
+    linkRecipe(["Fries", "Fries (side)"], [{
+      invId: invId["Fries (frozen)"],
+      qty: 1
+    }, {
+      invId: invId["Ketchup Portion"],
+      qty: 1
+    }]);
+    linkRecipe(["Ice Cream"], [{
+      invId: invId["Ice Cream Rum Raisin"],
+      qty: 1
+    }], "costed using Rum Raisin; Super Hero flavor also in Inventory as its own item");
+    setInventory(nextInventory);
+    setSides(nextSides);
+    setPackaging(nextPackaging);
+    setRecipes(nextRecipes);
+    setImportResult({
+      linked,
+      skipped,
+      alreadySet,
+      invCreated,
+      invUpdated
+    });
+  };
+
   // Full breakdown for one menu item: base recipe + its default protein +
   // its default sides + its default packaging, each ingredient line shown
   // with cost, plus a grand total — this is the "click and see everything"
   // view, computed live from the exact same data Cost Analysis uses.
+  // Prefer the real weighted average (from actual deliveries received).
+  // If that isn't set yet, fall back to the average of the supplier
+  // prices you've entered — those are real prices you've paid, just not
+  // yet backed by a logged delivery. Only show "not set" when neither
+  // exists at all.
+  const effectiveCost = inv => {
+    if (inv.avgCost) return {
+      cost: inv.avgCost,
+      source: "avg"
+    };
+    const priceVals = Object.values(inv.prices || {});
+    if (priceVals.length) return {
+      cost: priceVals.reduce((a, b) => a + b, 0) / priceVals.length,
+      source: "supplier"
+    };
+    return {
+      cost: 0,
+      source: "none"
+    };
+  };
   const itemBreakdown = item => {
     const lines = [];
     let missing = false;
     const addLine = (label, invId, qty) => {
       const inv = inventory.find(i => i.id === invId);
       if (!inv) return;
-      if (!inv.avgCost) missing = true;
+      const {
+        cost,
+        source
+      } = effectiveCost(inv);
+      if (source === "none") missing = true;
       lines.push({
         label,
         ingredient: inv.name,
         qty,
         unit: inv.unit,
-        unitCost: inv.avgCost || 0,
-        lineCost: (inv.avgCost || 0) * qty
+        unitCost: cost,
+        lineCost: cost * qty,
+        source
       });
     };
     (recipes[item.id] || []).forEach(ing => addLine("Base", ing.invId, ing.qty));
@@ -12069,7 +12401,73 @@ function MenuTab({
       fontFamily: "inherit",
       fontWeight: 700
     }
-  }, l))), menuView === "items" && /*#__PURE__*/React.createElement("div", null, custItemId && /*#__PURE__*/React.createElement("div", {
+  }, l))), menuView === "items" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16,
+      background: "#E8F0FE",
+      border: "2px solid " + C.blue
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.charcoal
+    }
+  }, /*#__PURE__*/React.createElement("strong", null, "Import from your costing spreadsheet"), " — adds ingredients and links recipes for dishes with confirmed costs (Fries, Rice, Jerk Chicken, Fried Chicken, Chicken Strips, Hot Dog, Rasta Pasta, Oxtail, Ice Cream). Only creates new inventory items and only links recipes onto menu items that already exist by name — nothing gets deleted or overwritten."), /*#__PURE__*/React.createElement(Btn, {
+    onClick: importCostingSheet,
+    color: C.blue
+  }, "Import Costing Sheet")), importResult && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 14,
+      background: C.white,
+      borderRadius: 8,
+      padding: 12,
+      fontSize: 12
+    }
+  }, importResult.invCreated.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: C.green
+    }
+  }, "New inventory items added:"), " ", importResult.invCreated.join(", ")), importResult.invUpdated.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: C.gold
+    }
+  }, "Existing inventory items given a cost:"), " ", importResult.invUpdated.join(", ")), importResult.linked.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: C.green
+    }
+  }, "Recipes linked:"), " ", importResult.linked.join(" | ")), importResult.alreadySet.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: C.charcoal
+    }
+  }, "Skipped (already had a recipe set):"), " ", importResult.alreadySet.join(", ")), importResult.skipped.length > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: C.red
+    }
+  }, "Not found on your menu (no changes made):"), " ", importResult.skipped.join(", ")))), custItemId && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       top: 0,
@@ -12468,7 +12866,9 @@ function MenuTab({
     onClick: () => setEditRecipeId(null),
     color: C.charcoal,
     outline: true
-  }, "Cancel"))))), /*#__PURE__*/React.createElement(Card, {
+  }, "Cancel"))))), /*#__PURE__*/React.createElement("div", {
+    ref: editFormRef
+  }, /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 16,
       background: C.lightGold,
@@ -12720,7 +13120,7 @@ function MenuTab({
       borderRadius: 6,
       padding: 8
     }
-  }, "Click \"Details\" on any item below to see its full ingredient-by-ingredient cost breakdown — base recipe, protein, sides, and packaging all together.")), /*#__PURE__*/React.createElement(Card, {
+  }, "Click \"Details\" on any item below to see its full ingredient-by-ingredient cost breakdown — base recipe, protein, sides, and packaging all together."))), /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 16
     }
@@ -12969,6 +13369,10 @@ function MenuTab({
             sideIds: item.sideIds || [],
             packagingIds: item.packagingIds || []
           });
+          if (editFormRef.current) editFormRef.current.scrollIntoView({
+            behavior: "smooth",
+            block: "start"
+          });
         },
         color: C.blue,
         outline: true
@@ -13051,11 +13455,14 @@ function MenuTab({
         style: {
           padding: "4px 8px"
         }
-      }, l.unitCost ? fmt(l.unitCost) : /*#__PURE__*/React.createElement("span", {
+      }, l.source === "none" ? /*#__PURE__*/React.createElement("span", {
         style: {
           color: C.orange
         }
-      }, "not set")), /*#__PURE__*/React.createElement("td", {
+      }, "not set") : /*#__PURE__*/React.createElement("span", null, fmt(l.unitCost), " ", l.source === "supplier" && /*#__PURE__*/React.createElement(Badge, {
+        small: true,
+        color: C.blue
+      }, "from supplier price"))), /*#__PURE__*/React.createElement("td", {
         style: {
           padding: "4px 8px",
           fontWeight: 700
@@ -13585,6 +13992,7 @@ function App() {
     packaging: packaging,
     setPackaging: setPackaging,
     inventory: inventory,
+    setInventory: setInventory,
     settings: settings,
     setSettings: setSettings
   }), tab === "inventory" && /*#__PURE__*/React.createElement(InventoryTab, {
