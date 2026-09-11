@@ -2959,7 +2959,7 @@ function InventoryTab({
 
   // Servings helpers
   const getCanMake = menuItemId => {
-    const recipe = recipes[menuItemId] || [];
+    const recipe = Array.isArray(recipes[menuItemId]) ? recipes[menuItemId] : [];
     if (!recipe.length) return null;
     let min = Infinity,
       bottleneck = "";
@@ -3114,7 +3114,7 @@ function InventoryTab({
   // Recipe helpers
   const openRecipe = item => {
     setEditRecipeId(item.id);
-    setRecipeLines([...(recipes[item.id] || [])].map(r => ({
+    setRecipeLines((Array.isArray(recipes[item.id]) ? recipes[item.id] : []).map(r => ({
       ...r
     })));
   };
@@ -11928,7 +11928,7 @@ function MenuTab({
     options: g.options.filter(o => o.name !== oname)
   } : g));
   const getCanMake = menuItemId => {
-    const recipe = recipes[menuItemId] || [];
+    const recipe = Array.isArray(recipes[menuItemId]) ? recipes[menuItemId] : [];
     if (!recipe.length) return null;
     let min = Infinity,
       bottleneck = "";
@@ -11948,7 +11948,7 @@ function MenuTab({
   };
   const openRecipe = item => {
     setEditRecipeId(item.id);
-    setRecipeLines([...(recipes[item.id] || [])].map(r => ({
+    setRecipeLines((Array.isArray(recipes[item.id]) ? recipes[item.id] : []).map(r => ({
       ...r
     })));
   };
@@ -12361,18 +12361,18 @@ function MenuTab({
         source
       });
     };
-    (recipes[item.id] || []).forEach(ing => addLine("Base", ing.invId, ing.qty));
+    (Array.isArray(recipes[item.id]) ? recipes[item.id] : []).forEach(ing => addLine("Base", ing.invId, ing.qty));
     if (item.proteinId) {
       const prot = proteins.find(p => p.id === item.proteinId);
-      if (prot) (prot.recipe || []).forEach(ing => addLine("Protein: " + prot.name, ing.invId, ing.qty));
+      if (prot) (Array.isArray(prot.recipe) ? prot.recipe : []).forEach(ing => addLine("Protein: " + prot.name, ing.invId, ing.qty));
     }
     (item.sideIds || []).forEach(sid => {
       const side = sides.find(s => s.id === sid);
-      if (side) (side.recipe || []).forEach(ing => addLine("Side: " + side.name, ing.invId, ing.qty));
+      if (side) (Array.isArray(side.recipe) ? side.recipe : []).forEach(ing => addLine("Side: " + side.name, ing.invId, ing.qty));
     });
     (item.packagingIds || []).forEach(pid => {
       const pkg = packaging.find(p => p.id === pid);
-      if (pkg) (pkg.recipe || []).forEach(ing => addLine("Packaging: " + pkg.name, ing.invId, ing.qty));
+      if (pkg) (Array.isArray(pkg.recipe) ? pkg.recipe : []).forEach(ing => addLine("Packaging: " + pkg.name, ing.invId, ing.qty));
     });
     const total = lines.reduce((s, l) => s + l.lineCost, 0);
     return {
@@ -13666,6 +13666,76 @@ function MenuTab({
     outline: true
   }, "Del")))))))));
 }
+
+// Catches any crash anywhere in the app during rendering (not just the
+// very first load) and shows a clear, recoverable message instead of a
+// blank screen. Click "Reload" to recover, or "Go to POS" to jump back
+// to a known-safe screen without losing today's already-saved data.
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null
+    };
+  }
+  static getDerivedStateFromError(error) {
+    return {
+      hasError: true,
+      error
+    };
+  }
+  componentDidCatch(error, info) {
+    console.error("App crashed:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement("div", {
+        style: {
+          padding: 40,
+          textAlign: "center",
+          fontFamily: "Georgia,serif",
+          maxWidth: 500,
+          margin: "60px auto"
+        }
+      }, React.createElement("div", {
+        style: {
+          fontSize: 40
+        }
+      }, "\u{1F37D}\uFE0F"), React.createElement("h2", {
+        style: {
+          margin: "16px 0 8px"
+        }
+      }, "Something went wrong on this screen"), React.createElement("p", {
+        style: {
+          color: "#666",
+          fontSize: 14,
+          marginBottom: 16
+        }
+      }, "Your saved data is safe — this only affects the current screen. Try reloading; if it keeps happening on the same screen, that tells us exactly where the problem is."), this.state.error && React.createElement("p", {
+        style: {
+          color: "#999",
+          fontSize: 11,
+          marginBottom: 20,
+          fontFamily: "monospace",
+          wordBreak: "break-word"
+        }
+      }, String(this.state.error.message || this.state.error)), React.createElement("button", {
+        onClick: () => window.location.reload(),
+        style: {
+          background: "#1B5E20",
+          color: "white",
+          border: "none",
+          borderRadius: 8,
+          padding: "12px 24px",
+          fontSize: 14,
+          cursor: "pointer"
+        }
+      }, "Reload"));
+    }
+    return this.props.children;
+  }
+}
 function App() {
   const [tab, setTab] = useState("pos");
   const [settings, setSettings, sLoaded] = usePersistedState("tog-settings", DEFAULT_SETTINGS);
@@ -14071,7 +14141,7 @@ function App() {
   })));
 }
 try {
-  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(ErrorBoundary, null, React.createElement(App)));
 } catch(e) {
   document.getElementById('root').innerHTML = '<div style="padding:40px;text-align:center;font-family:Georgia,serif"><div style="font-size:40px">&#x1F37D;</div><h2 style="margin:16px 0 8px">Loading Error</h2><p style="color:#666;font-size:14px">' + e.message + '</p><button onclick="location.reload()" style="margin-top:16px;background:#1B5E20;color:white;border:none;border-radius:8px;padding:12px 24px;font-size:14px;cursor:pointer">Reload</button></div>';
   console.error("App error:", e);
