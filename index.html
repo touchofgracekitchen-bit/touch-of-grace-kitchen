@@ -8514,9 +8514,56 @@ function EODTab({
       }
     }, fmt(s.total)), /*#__PURE__*/React.createElement("td", {
       style: {
-        padding: "8px 12px"
+        padding: "8px 12px",
+        display: "flex",
+        gap: 6
       }
-    }, isRefunded ? /*#__PURE__*/React.createElement(Badge, {
+    }, /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        const biz = settings.business || {};
+        const items = s.items.map(i => `<tr><td>${i.qty}x ${i.name}${i.customization ? " (" + i.customization + ")" : ""}</td><td style="text-align:right">$${(i.price * i.qty).toFixed(2)}</td></tr>`).join("");
+        const disc = s.discount ? `<tr><td>Discount (${s.discount.label})</td><td style="text-align:right">-$${(s.discountAmt || 0).toFixed(2)}</td></tr>` : "";
+        const gstLine = s.gst > 0 ? `<tr><td>GST</td><td style="text-align:right">$${(s.gst || 0).toFixed(2)}</td></tr>` : "";
+        const pstLine = s.pst > 0 ? `<tr><td>PST</td><td style="text-align:right">$${(s.pst || 0).toFixed(2)}</td></tr>` : "";
+        const html = `<div style="font-family:monospace;font-size:13px;width:100%;max-width:320px;margin:0 auto">
+                          <div style="text-align:center;font-weight:bold;font-size:15px">${biz.name || "Touch of Grace Kitchen"}</div>
+                          ${biz.address ? `<div style="text-align:center;font-size:11px">${biz.address}</div>` : ""}
+                          ${biz.phone ? `<div style="text-align:center;font-size:11px">${biz.phone}</div>` : ""}
+                          ${biz.gstNumber ? `<div style="text-align:center;font-size:11px">GST# ${biz.gstNumber}</div>` : ""}
+                          <div style="border-top:1px dashed #000;margin:6px 0"></div>
+                          <div>Order #${s.orderNumber} — ${s.orderType} (reprint)</div>
+                          <div style="font-size:11px">${s.date} ${s.time}</div>
+                          <div style="border-top:1px dashed #000;margin:6px 0"></div>
+                          <table style="width:100%;border-collapse:collapse">${items}${disc}</table>
+                          <div style="border-top:1px dashed #000;margin:6px 0"></div>
+                          <table style="width:100%;border-collapse:collapse">
+                            <tr><td>Subtotal</td><td style="text-align:right">$${(s.discountedSub || s.subtotal || 0).toFixed(2)}</td></tr>
+                            ${gstLine}${pstLine}
+                            <tr style="font-weight:bold;font-size:14px"><td>TOTAL</td><td style="text-align:right">$${(s.total || 0).toFixed(2)}</td></tr>
+                            <tr><td>Payment</td><td style="text-align:right">${s.payMethod || ""}</td></tr>
+                          </table>
+                          <div style="border-top:1px dashed #000;margin:6px 0"></div>
+                          <div style="text-align:center;font-size:11px;margin-top:6px">Thank you for dining with us!</div>
+                        </div>`;
+        let f = document.getElementById("receipt-print-frame");
+        if (!f) {
+          f = document.createElement("iframe");
+          f.id = "receipt-print-frame";
+          f.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:320px;height:600px;border:none;";
+          document.body.appendChild(f);
+        }
+        f.contentDocument.open();
+        f.contentDocument.write("<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box}body{padding:8px}td{padding:2px 0}td:last-child{text-align:right}@media print{@page{size:80mm auto;margin:4mm}}</style></head><body>" + html + "</body></html>");
+        f.contentDocument.close();
+        setTimeout(() => {
+          f.contentWindow.focus();
+          f.contentWindow.print();
+        }, 400);
+      },
+      color: C.blue,
+      outline: true
+    }, "🖨️ Print"), isRefunded ? /*#__PURE__*/React.createElement(Badge, {
       small: true,
       color: C.red
     }, "Refunded") : /*#__PURE__*/React.createElement(Btn, {
