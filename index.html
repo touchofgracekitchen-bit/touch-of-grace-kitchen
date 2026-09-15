@@ -1947,6 +1947,7 @@ function POSTab({
       orderNumber: num,
       date: today(),
       time: nowStr(),
+      orderSource: "pos",
       items: [...order],
       subtotal,
       discountAmt: parseFloat((discountAmt || 0).toFixed(2)),
@@ -2670,118 +2671,83 @@ function KitchenTab({
 }) {
   const [filter, setFilter] = useState("active");
   const [lastRefresh, setLastRefresh] = useState(Date.now());
+  const prevNewCount = React.useRef(0);
+  const audioUnlocked = React.useRef(false);
   useEffect(() => {
     const t = setInterval(() => setLastRefresh(Date.now()), 4000);
     return () => clearInterval(t);
   }, []);
-  const updateStatus = (id, status) => {
-    setKitchenOrders(prev => prev.map(o => o.id === id ? {
+
+  // A short two-tone chime, generated on the fly — no sound file needed.
+  // Browsers block audio until the page has been tapped once; the very
+  // first tap anywhere on this screen unlocks it for the rest of the day.
+  const playDing = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [880, 1320].forEach((freq, i) => {
+        const osc = ctx.createOscillator(),
+          gain = ctx.createGain();
+        osc.frequency.value = freq;
+        osc.type = "sine";
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const start = ctx.currentTime + i * 0.15;
+        gain.gain.setValueAtTime(0.3, start);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.35);
+        osc.start(start);
+        osc.stop(start + 0.4);
+      });
+    } catch (e) {}
+  };
+  useEffect(() => {
+    const newCount = (kitchenOrders || []).filter(o => o.status === "new").length;
+    if (audioUnlocked.current && newCount > prevNewCount.current) playDing();
+    prevNewCount.current = newCount;
+  }, [kitchenOrders]);
+
+  // Re-reads the latest shared queue immediately before applying a status
+  // change, instead of trusting whatever this tablet last polled — this
+  // shrinks the window where two tablets updating different orders at
+  // nearly the same moment could overwrite each other down to a single
+  // network round-trip instead of up to several seconds.
+  const updateStatus = async (id, status) => {
+    let latest = kitchenOrders;
+    try {
+      const fresh = await dbLoad("tog-kitchen-queue");
+      if (Array.isArray(fresh)) latest = fresh;
+    } catch (e) {}
+    const next = latest.map(o => o.id === id ? {
       ...o,
       status
-    } : o));
+    } : o);
+    setKitchenOrders(next);
   };
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
   const orders = kitchenOrders || [];
-  const visible = filter === "active" ? orders.filter(o => o.status !== "collected") : orders.filter(o => o.status === "collected");
+  const recentEnough = o => Date.now() - (o.placedAt || 0) < THREE_DAYS_MS;
+  const [clearResult, setClearResult] = useState(null);
+  const clearOldCollected = () => {
+    const before = orders.length;
+    const kept = orders.filter(o => o.status !== "collected" || recentEnough(o));
+    setKitchenOrders(kept);
+    setClearResult(before - kept.length);
+  };
+  const visible = filter === "active" ? orders.filter(o => o.status !== "collected") : orders.filter(o => o.status === "collected" && recentEnough(o));
   const sorted = [...visible].sort((a, b) => a.placedAt - b.placedAt);
+  const accountsOrders = sorted.filter(o => o.orderSource === "accounts");
+  const posOrders = sorted.filter(o => o.orderSource !== "accounts");
   const newCount = orders.filter(o => o.status === "new").length;
   const cookingCount = orders.filter(o => o.status === "cooking").length;
   const readyCount = orders.filter(o => o.status === "ready").length;
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: "#1A1208",
-      borderRadius: 12,
-      padding: "16px 24px",
-      marginBottom: 20,
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      flexWrap: "wrap",
-      gap: 10
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      color: C.gold,
-      fontWeight: 800,
-      fontSize: 22
-    }
-  }, "Kitchen Display"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 20,
-      fontSize: 16
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: C.red,
-      fontWeight: 800,
-      fontSize: 18
-    }
-  }, newCount, " New"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: C.orange,
-      fontWeight: 800,
-      fontSize: 18
-    }
-  }, cookingCount, " Cooking"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: C.green,
-      fontWeight: 800,
-      fontSize: 18
-    }
-  }, readyCount, " Ready")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: "#888"
-    }
-  }, "Auto-refreshes every 4s - open this tab on kitchen tablet")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      marginBottom: 16
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    onClick: () => setFilter("active"),
-    color: filter === "active" ? C.green : C.charcoal,
-    outline: filter !== "active"
-  }, "Active Orders (", orders.filter(o => o.status !== "collected").length, ")"), /*#__PURE__*/React.createElement(Btn, {
-    onClick: () => setFilter("done"),
-    color: filter === "done" ? C.charcoal : C.charcoal,
-    outline: filter !== "done"
-  }, "Collected (", orders.filter(o => o.status === "collected").length, ")")), sorted.length === 0 && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      textAlign: "center",
-      padding: 60
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 36,
-      marginBottom: 12
-    }
-  }, "💤"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 18,
-      color: C.charcoal,
-      fontWeight: 700
-    }
-  }, "No ", filter === "active" ? "active" : "", " orders"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 13,
-      color: C.gray,
-      marginTop: 8
-    }
-  }, "Orders placed from POS appear here instantly")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))",
-      gap: 20
-    }
-  }, sorted.map(order => /*#__PURE__*/React.createElement("div", {
+  const oldCollectedCount = orders.filter(o => o.status === "collected" && !recentEnough(o)).length;
+  const renderCard = order => /*#__PURE__*/React.createElement("div", {
     key: order.id,
     style: {
       borderRadius: 12,
       border: "3px solid " + (K_COLORS[order.status] || C.border),
       background: C.white,
-      overflow: "hidden"
+      overflow: "hidden",
+      marginBottom: 16
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
@@ -2894,9 +2860,166 @@ function KitchenTab({
     small: true,
     onClick: () => updateStatus(order.id, "ready"),
     color: C.green
-  }, "Ready!"))))));
+  }, "Ready!")));
+  return /*#__PURE__*/React.createElement("div", {
+    onClick: () => {
+      audioUnlocked.current = true;
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#1A1208",
+      borderRadius: 12,
+      padding: "16px 24px",
+      marginBottom: 20,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.gold,
+      fontWeight: 800,
+      fontSize: 22
+    }
+  }, "Kitchen Display"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 20,
+      fontSize: 16
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.red,
+      fontWeight: 800,
+      fontSize: 18
+    }
+  }, newCount, " New"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.orange,
+      fontWeight: 800,
+      fontSize: 18
+    }
+  }, cookingCount, " Cooking"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.green,
+      fontWeight: 800,
+      fontSize: 18
+    }
+  }, readyCount, " Ready")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#888"
+    }
+  }, "Auto-refreshes every 4s - open this tab on kitchen tablet")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 16,
+      flexWrap: "wrap",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setFilter("active"),
+    color: filter === "active" ? C.green : C.charcoal,
+    outline: filter !== "active"
+  }, "Active Orders (", orders.filter(o => o.status !== "collected").length, ")"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setFilter("done"),
+    color: filter === "done" ? C.charcoal : C.charcoal,
+    outline: filter !== "done"
+  }, "Collected, last 3 days (", orders.filter(o => o.status === "collected" && recentEnough(o)).length, ")"), filter === "done" && oldCollectedCount > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginLeft: "auto",
+      display: "flex",
+      gap: 8,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.gray
+    }
+  }, oldCollectedCount, " older collected order", oldCollectedCount !== 1 ? "s" : "", " hidden (still safe, not shown)"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => {
+      if (window.confirm("Remove " + oldCollectedCount + " collected order(s) older than 3 days from this screen? This never touches your Sales history, Reports, or End of Day — those are stored separately and keep everything forever.")) clearOldCollected();
+    },
+    color: C.red,
+    outline: true
+  }, "Clear Old Orders"))), clearResult !== null && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#E8F5E9",
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 16,
+      fontSize: 13,
+      color: C.green
+    }
+  }, "Removed ", clearResult, " old collected order(s) from this screen. Your sales records are untouched."), sorted.length === 0 && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      textAlign: "center",
+      padding: 60
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 36,
+      marginBottom: 12
+    }
+  }, "💤"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 18,
+      color: C.charcoal,
+      fontWeight: 700
+    }
+  }, "No ", filter === "active" ? "active" : "recent", " orders"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.gray,
+      marginTop: 8
+    }
+  }, "Orders placed from POS or Accounts appear here instantly")), sorted.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 16,
+      color: C.dark,
+      marginBottom: 10,
+      paddingBottom: 8,
+      borderBottom: "3px solid " + C.orange
+    }
+  }, "Phone / Accounts Orders (", accountsOrders.length, ")"), accountsOrders.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.gray,
+      fontSize: 13,
+      textAlign: "center",
+      padding: 20
+    }
+  }, "None right now") : accountsOrders.map(renderCard)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 16,
+      color: C.dark,
+      marginBottom: 10,
+      paddingBottom: 8,
+      borderBottom: "3px solid " + C.blue
+    }
+  }, "Walk-in / POS Orders (", posOrders.length, ")"), posOrders.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.gray,
+      fontSize: 13,
+      textAlign: "center",
+      padding: 20
+    }
+  }, "None right now") : posOrders.map(renderCard))));
 }
 
+// -- INVENTORY TAB
 // -- INVENTORY TAB ------------------------------------------------------------
 function InventoryTab({
   inventory,
@@ -5733,6 +5856,7 @@ function AccountsTab({
         orderNumber: num,
         date: today(),
         time: nowStr(),
+        orderSource: "accounts",
         items: [...acOrder],
         subtotal: parseFloat(acSubtotal.toFixed(2)),
         discountAmt: parseFloat((acDiscountAmt || 0).toFixed(2)),
