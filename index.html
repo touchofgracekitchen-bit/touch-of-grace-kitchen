@@ -206,7 +206,28 @@ const DEFAULT_SETTINGS = {
     12: 15400
   },
   expenseCategories: ["Lease", "Insurance", "Food & Inventory", "Supplies", "Marketing", "Utilities", "Staff Wages", "Licensing", "Other"],
-  menuCategories: ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"]
+  menuCategories: ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"],
+  // Verified against CRA/BC published figures as of when this was set up.
+  // These change every January (CRA) and every June (BC min wage) — there
+  // is no way to build this once and forget it. Edit them in Settings each
+  // year rather than asking for a code change.
+  payrollRates: {
+    year: 2026,
+    cppRate: 5.95,
+    cppBasicExemption: 3500,
+    cppYMPE: 74600,
+    cpp2Rate: 4.00,
+    cpp2YAMPE: 85000,
+    eiRate: 1.63,
+    eiMaxInsurable: 68900,
+    bcMinWage: 18.25,
+    lastVerified: "2026-01-15"
+  },
+  workSafeBC: {
+    classificationUnit: "",
+    rate: "",
+    maxAssessableEarnings: 127500
+  }
 };
 const MENU_INIT = [
 // Breakfast
@@ -4585,8 +4606,13 @@ function ExpensesTab({
 function StaffTab({
   staff,
   setStaff,
-  positions
+  positions,
+  settings,
+  setSettings,
+  schedule,
+  setSchedule
 }) {
+  const [staffView, setStaffView] = useState("directory");
   const [loaded] = [true]; // staff is passed from App (already loaded)
   const [addMode, setAddMode] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -4596,6 +4622,69 @@ function StaffTab({
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState("");
   const [payPeriod, setPayPeriod] = useState("bi-weekly");
+  const [vacStaffId, setVacStaffId] = useState(null);
+  const [vacGross, setVacGross] = useState("");
+  const [vacPayoutAmt, setVacPayoutAmt] = useState("");
+  const [vacNote, setVacNote] = useState("");
+
+  // BC ESA minimum: 4% of gross for the first 5 years of continuous
+  // employment, 6% after that. This is a floor, not a cap — you can pay
+  // more, never less.
+  const yearsOfService = s => {
+    if (!s.startDate) return 0;
+    return (Date.now() - new Date(s.startDate + "T00:00:00").getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+  };
+  const vacationRate = s => yearsOfService(s) >= 5 ? 0.06 : 0.04;
+  const vacationBalance = s => (s.vacationLedger || []).reduce((bal, e) => e.type === "accrued" ? bal + e.amount : bal - e.amount, 0);
+  const addVacationEntry = (staffId, type, amount, note) => {
+    if (!amount || amount <= 0) return;
+    setStaff(staff.map(s => s.id === staffId ? {
+      ...s,
+      vacationLedger: [...(s.vacationLedger || []), {
+        id: Date.now(),
+        date: today(),
+        type,
+        amount: parseFloat(amount.toFixed(2)),
+        note: note || ""
+      }]
+    } : s));
+  };
+
+  // Actual worked hours from the time clock, for the current pay period
+  // window — a rolling window matching the period length (not calendar-
+  // aligned), shown alongside the manually-entered "scheduled" hours so
+  // you can see when reality drifts from the plan.
+  const periodDays = payPeriod === "weekly" ? 7 : payPeriod === "bi-weekly" ? 14 : 28;
+  const periodStart = new Date(Date.now() - periodDays * 24 * 60 * 60 * 1000);
+  const parseHM = str => {
+    const [h, m] = (str || "0:0").split(":").map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  const shiftHours = entry => {
+    if (!entry.clockOut) return 0;
+    let diff = parseHM(entry.clockOut) - parseHM(entry.clockIn);
+    if (diff < 0) diff += 24 * 60;
+    return diff / 60;
+  };
+  const actualHoursThisPeriod = s => (s.clockHistory || []).filter(h => new Date(h.date + "T00:00:00") >= periodStart).reduce((sum, h) => sum + shiftHours(h), 0);
+
+  // -- Schedule builder --
+  const [shiftStaffId, setShiftStaffId] = useState(staff[0] ? String(staff[0].id) : "");
+  const [shiftDate, setShiftDate] = useState(today());
+  const [shiftStart, setShiftStart] = useState("09:00");
+  const [shiftEnd, setShiftEnd] = useState("17:00");
+  const addShift = () => {
+    if (!shiftStaffId || !shiftDate) return;
+    setSchedule([...schedule, {
+      id: Date.now(),
+      staffId: parseInt(shiftStaffId),
+      date: shiftDate,
+      start: shiftStart,
+      end: shiftEnd
+    }]);
+  };
+  const removeShift = id => setSchedule(schedule.filter(x => x.id !== id));
+  const upcomingShifts = [...schedule].filter(sh => sh.date >= today()).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
   const blankForm = {
     name: "",
     role: "",
@@ -4611,11 +4700,39 @@ function StaffTab({
     contactNumber: "",
     nextOfKin: "",
     benefits: "",
-    employmentBasis: "Full-time"
+    employmentBasis: "Full-time",
+    td1Federal: "",
+    td1BC: "",
+    td1FiledDate: ""
   };
   const [form, setForm] = useState(blankForm);
   const mult = payPeriod === "weekly" ? 1 : payPeriod === "bi-weekly" ? 2 : 4;
+  const periodsPerYear = 52 / mult;
   const payrollTotal = staff.filter(s => s.type !== "Owner").reduce((sum, s) => sum + s.hourlyRate * s.hoursPerWeek * mult, 0);
+  const [editRates, setEditRates] = useState(false);
+  const rates = settings.payrollRates || DEFAULT_SETTINGS.payrollRates;
+  const wsbc = settings.workSafeBC || DEFAULT_SETTINGS.workSafeBC;
+
+  // Rough same-year estimate only — annualizes the pay-period gross, applies
+  // the CPP basic exemption and the CPP/CPP2 tiers correctly (not a flat
+  // rate on gross), then converts back to a per-period figure. This is for
+  // budgeting, not a remittance amount — run real numbers through CRA's
+  // PDOC calculator or your payroll provider before paying anyone.
+  const estimateDeductions = grossPerPeriod => {
+    const annual = grossPerPeriod * periodsPerYear;
+    const cppable = Math.min(Math.max(annual - rates.cppBasicExemption, 0), rates.cppYMPE - rates.cppBasicExemption);
+    const cpp2able = Math.min(Math.max(annual - rates.cppYMPE, 0), rates.cpp2YAMPE - rates.cppYMPE);
+    const eiable = Math.min(annual, rates.eiMaxInsurable);
+    const annualCPP = cppable * (rates.cppRate / 100);
+    const annualCPP2 = cpp2able * (rates.cpp2Rate / 100);
+    const annualEI = eiable * (rates.eiRate / 100);
+    return {
+      cpp: annualCPP / periodsPerYear,
+      cpp2: annualCPP2 / periodsPerYear,
+      ei: annualEI / periodsPerYear,
+      totalDeductions: (annualCPP + annualCPP2 + annualEI) / periodsPerYear
+    };
+  };
   const getPos = s => (positions || POSITIONS_INIT).find(p => p.id === s.positionId) || {
     name: "No Position",
     color: C.gray,
@@ -4644,7 +4761,10 @@ function StaffTab({
       contactNumber: s.contactNumber || "",
       nextOfKin: s.nextOfKin || "",
       benefits: s.benefits || "",
-      employmentBasis: s.employmentBasis || "Full-time"
+      employmentBasis: s.employmentBasis || "Full-time",
+      td1Federal: s.td1Federal || "",
+      td1BC: s.td1BC || "",
+      td1FiledDate: s.td1FiledDate || ""
     });
     setShowPin(false);
     setShowSin(false);
@@ -4776,7 +4896,198 @@ function StaffTab({
     onClick: () => setPinModal(null),
     color: C.charcoal,
     outline: true
-  }, "Cancel")))), addMode && /*#__PURE__*/React.createElement("div", {
+  }, "Cancel")))), vacStaffId && (() => {
+    const s = staff.find(x => x.id === vacStaffId);
+    if (!s) return null;
+    const rate = vacationRate(s);
+    const suggested = vacGross ? parseFloat(vacGross) * rate : 0;
+    const history = [...(s.vacationLedger || [])].sort((a, b) => b.date.localeCompare(a.date));
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "rgba(0,0,0,0.65)",
+        zIndex: 999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center"
+      }
+    }, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        width: 480,
+        maxHeight: "85vh",
+        overflow: "auto",
+        border: "2px solid " + C.teal
+      }
+    }, /*#__PURE__*/React.createElement(SH, null, "Vacation Ledger — ", s.name), /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: C.lightGold,
+        borderRadius: 8,
+        padding: 10,
+        marginBottom: 14,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 13
+      }
+    }, "Current balance (", (rate * 100).toFixed(0), "% — ", yearsOfService(s).toFixed(1), " yrs service)"), /*#__PURE__*/React.createElement("strong", {
+      style: {
+        fontSize: 18,
+        color: C.teal
+      }
+    }, fmt(vacationBalance(s)))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        fontSize: 13,
+        marginBottom: 6
+      }
+    }, "Log accrual for a pay period"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        marginBottom: 6
+      }
+    }, /*#__PURE__*/React.createElement(Inp, {
+      type: "number",
+      value: vacGross,
+      onChange: setVacGross,
+      placeholder: "Gross pay for the period ($)",
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        addVacationEntry(s.id, "accrued", suggested, "Accrued on " + fmt(vacGross) + " gross");
+        setVacGross("");
+      },
+      color: C.teal
+    }, "Add ", vacGross ? fmt(suggested) : "")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.gray
+      }
+    }, "Suggested = gross × ", (rate * 100).toFixed(0), "% (BC ESA minimum). You can log a different amount if you're paying more.")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 14
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        fontSize: 13,
+        marginBottom: 6
+      }
+    }, "Log a payout (vacation taken, or paid on termination)"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Inp, {
+      type: "number",
+      value: vacPayoutAmt,
+      onChange: setVacPayoutAmt,
+      placeholder: "Amount paid out ($)",
+      style: {
+        flex: 1
+      }
+    }), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        addVacationEntry(s.id, "paid", parseFloat(vacPayoutAmt) || 0, vacNote);
+        setVacPayoutAmt("");
+        setVacNote("");
+      },
+      color: C.red
+    }, "Log Payout")), /*#__PURE__*/React.createElement(Inp, {
+      value: vacNote,
+      onChange: setVacNote,
+      placeholder: "Note (e.g. vacation week of...)",
+      style: {
+        marginTop: 6
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.gray,
+        marginTop: 4
+      }
+    }, "BC rule: vacation pay must generally be paid before the vacation is taken, unless the employee has agreed in writing to receive it on each regular paycheque instead.")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        fontSize: 13,
+        marginBottom: 6
+      }
+    }, "History"), history.length === 0 ? /*#__PURE__*/React.createElement("p", {
+      style: {
+        color: C.gray,
+        fontSize: 12,
+        textAlign: "center",
+        padding: 10
+      }
+    }, "No entries yet.") : /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 12
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: C.green
+      }
+    }, ["Date", "Type", "Amount", "Note"].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: {
+        color: C.white,
+        padding: "6px 8px",
+        textAlign: "left"
+      }
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, history.map(e => /*#__PURE__*/React.createElement("tr", {
+      key: e.id,
+      style: {
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 8px"
+      }
+    }, e.date), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 8px"
+      }
+    }, /*#__PURE__*/React.createElement(Badge, {
+      small: true,
+      color: e.type === "accrued" ? C.teal : C.red
+    }, e.type)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 8px",
+        fontWeight: 700
+      }
+    }, e.type === "accrued" ? "+" : "-", fmt(e.amount)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 8px",
+        fontSize: 11,
+        color: C.charcoal
+      }
+    }, e.note || "--")))))), /*#__PURE__*/React.createElement(Btn, {
+      onClick: () => setVacStaffId(null),
+      color: C.charcoal,
+      outline: true,
+      style: {
+        width: "100%",
+        marginTop: 14
+      }
+    }, "Close")));
+  })(), addMode && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       top: 0,
@@ -5089,6 +5400,66 @@ function StaffTab({
       benefits: v
     }),
     placeholder: "e.g. Extended health, dental"
+  }))), /*#__PURE__*/React.createElement(SH, null, "TD1 (Tax Credits)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 10,
+      fontSize: 11,
+      color: C.charcoal
+    }
+  }, "Every employee fills out a federal TD1 and a BC TD1BC on hire, and updates them if their personal situation changes. Storing the claim amount and filed date here is a record — it doesn't calculate withholding for you (see the Payroll Summary note below on that)."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: 12,
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "Federal TD1 claim amount ($)"), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: form.td1Federal || "",
+    onChange: v => setForm({
+      ...form,
+      td1Federal: v
+    }),
+    placeholder: "e.g. 16452"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "BC TD1 claim amount ($)"), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: form.td1BC || "",
+    onChange: v => setForm({
+      ...form,
+      td1BC: v
+    }),
+    placeholder: "e.g. 13216"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "TD1 filed date"), /*#__PURE__*/React.createElement(Inp, {
+    type: "date",
+    value: form.td1FiledDate || "",
+    onChange: v => setForm({
+      ...form,
+      td1FiledDate: v
+    })
   }))), (() => {
     const pos = (positions || POSITIONS_INIT).find(p => p.id === parseInt(form.positionId));
     if (!pos) return null;
@@ -5146,6 +5517,169 @@ function StaffTab({
     outline: true
   }, "Cancel")))), /*#__PURE__*/React.createElement("div", {
     style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 18
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setStaffView("directory"),
+    color: staffView === "directory" ? C.green : C.charcoal,
+    outline: staffView !== "directory"
+  }, "Staff Directory"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setStaffView("schedule"),
+    color: staffView === "schedule" ? C.green : C.charcoal,
+    outline: staffView !== "schedule"
+  }, "Schedule (", upcomingShifts.length, ")")), staffView === "schedule" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16,
+      background: C.lightGold,
+      border: "2px solid " + C.gold
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Add a Shift"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1.5fr 1fr 1fr 1fr auto",
+      gap: 10,
+      alignItems: "end"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "Staff Member"), /*#__PURE__*/React.createElement("select", {
+    value: shiftStaffId,
+    onChange: e => setShiftStaffId(e.target.value),
+    style: {
+      width: "100%",
+      padding: "8px 10px",
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      fontSize: 14,
+      background: C.white,
+      fontFamily: "inherit"
+    }
+  }, staff.map(s => /*#__PURE__*/React.createElement("option", {
+    key: s.id,
+    value: s.id
+  }, s.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "Date"), /*#__PURE__*/React.createElement(Inp, {
+    type: "date",
+    value: shiftDate,
+    onChange: setShiftDate
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "Start"), /*#__PURE__*/React.createElement(Inp, {
+    type: "time",
+    value: shiftStart,
+    onChange: setShiftStart
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 4
+    }
+  }, "End"), /*#__PURE__*/React.createElement(Inp, {
+    type: "time",
+    value: shiftEnd,
+    onChange: setShiftEnd
+  })), /*#__PURE__*/React.createElement(Btn, {
+    onClick: addShift
+  }, "+ Add Shift"))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 14px",
+      background: C.lightGold,
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, "Upcoming shifts, soonest first."), /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: C.green
+    }
+  }, ["Date", "Staff", "Start", "End", "Hours", ""].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      color: C.white,
+      padding: "8px 12px",
+      textAlign: "left"
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, upcomingShifts.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: 6,
+    style: {
+      padding: 20,
+      textAlign: "center",
+      color: C.gray
+    }
+  }, "No upcoming shifts scheduled.")) : upcomingShifts.map((sh, i) => {
+    const s = staff.find(x => x.id === sh.staffId);
+    const dur = shiftHours({
+      clockIn: sh.start,
+      clockOut: sh.end
+    });
+    return /*#__PURE__*/React.createElement("tr", {
+      key: sh.id,
+      style: {
+        background: i % 2 === 0 ? C.white : C.cream,
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, sh.date), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        fontWeight: 600
+      }
+    }, s ? s.name : "(removed staff)"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, sh.start), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, sh.end), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, dur.toFixed(1)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => removeShift(sh.id),
+      color: C.red,
+      outline: true
+    }, "Remove")));
+  }))))), staffView === "directory" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
       display: "grid",
       gridTemplateColumns: "repeat(4,1fr)",
       gap: 12,
@@ -5179,7 +5713,88 @@ function StaffTab({
       marginBottom: 14,
       fontSize: 13
     }
-  }, "BC Min Wage: ", /*#__PURE__*/React.createElement("strong", null, "$17.40/hr"), ". Remit CPP + EI + income tax to CRA by the 15th of following month. Configure positions and permissions in Settings."), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", null, "BC Min Wage: ", /*#__PURE__*/React.createElement("strong", null, "$", rates.bcMinWage, "/hr"), " · CPP ", rates.cppRate, "% (over $", rates.cppBasicExemption, ", capped at $", rates.cppYMPE, ") · CPP2 ", rates.cpp2Rate, "% ($", rates.cppYMPE, "–$", rates.cpp2YAMPE, ") · EI ", rates.eiRate, "% (capped at $", rates.eiMaxInsurable, ") · rates as of ", rates.year, ", verified ", rates.lastVerified), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => setEditRates(!editRates),
+    color: C.blue,
+    outline: true
+  }, editRates ? "Close" : "Update Rates")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      marginTop: 4
+    }
+  }, "These change every January (CRA) and every June (BC min wage). This is a rough estimate for your own planning — always run actual pay through CRA's PDOC calculator or your payroll provider before remitting."), editRates && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 10,
+      background: C.white,
+      borderRadius: 8,
+      padding: 12,
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: 8
+    }
+  }, [["Year", "year"], ["BC Min Wage ($/hr)", "bcMinWage"], ["Verified date", "lastVerified"], ["CPP rate (%)", "cppRate"], ["CPP basic exemption ($)", "cppBasicExemption"], ["CPP YMPE ($)", "cppYMPE"], ["CPP2 rate (%)", "cpp2Rate"], ["CPP2 YAMPE ($)", "cpp2YAMPE"], ["EI rate (%)", "eiRate"], ["EI max insurable ($)", "eiMaxInsurable"]].map(([label, key]) => /*#__PURE__*/React.createElement("div", {
+    key: key
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 10,
+      color: C.charcoal,
+      display: "block"
+    }
+  }, label), /*#__PURE__*/React.createElement(Inp, {
+    value: String(rates[key]),
+    onChange: v => setSettings({
+      ...settings,
+      payrollRates: {
+        ...rates,
+        [key]: key === "lastVerified" ? v : parseFloat(v) || 0
+      }
+    })
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "1 / -1"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 10,
+      color: C.charcoal,
+      display: "block"
+    }
+  }, "WorkSafeBC classification unit / rate (from your WorkSafeBC account)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    value: wsbc.classificationUnit,
+    onChange: v => setSettings({
+      ...settings,
+      workSafeBC: {
+        ...wsbc,
+        classificationUnit: v
+      }
+    }),
+    placeholder: "Classification unit #"
+  }), /*#__PURE__*/React.createElement(Inp, {
+    value: wsbc.rate,
+    onChange: v => setSettings({
+      ...settings,
+      workSafeBC: {
+        ...wsbc,
+        rate: v
+      }
+    }),
+    placeholder: "Rate (e.g. 1.55)"
+  }))))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -5265,7 +5880,19 @@ function StaffTab({
       style: {
         color: C.red
       }
-    }, s.hourlyRate > 0 ? fmt(periodPay) : "--"))), grantedPerms.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, s.hourlyRate > 0 ? fmt(periodPay) : "--")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.charcoal
+      }
+    }, "Scheduled hrs: "), /*#__PURE__*/React.createElement("strong", null, s.hoursPerWeek * mult)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.charcoal
+      }
+    }, "Actual (clocked): "), /*#__PURE__*/React.createElement("strong", {
+      style: {
+        color: Math.abs(actualHoursThisPeriod(s) - s.hoursPerWeek * mult) > 4 ? C.orange : C.green
+      }
+    }, actualHoursThisPeriod(s).toFixed(1)))), grantedPerms.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         flexWrap: "wrap",
@@ -5289,7 +5916,22 @@ function StaffTab({
       style: {
         color: C.charcoal
       }
-    }, r.date, " In:", r.clockIn, r.clockOut ? " Out:" + r.clockOut : " (active)"))), /*#__PURE__*/React.createElement("div", {
+    }, r.date, " In:", r.clockIn, r.clockOut ? " Out:" + r.clockOut : " (active)"))), s.type !== "Owner" && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        background: C.cream,
+        borderRadius: 6,
+        padding: "6px 10px",
+        marginBottom: 8,
+        fontSize: 12
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "Vacation balance (", (vacationRate(s) * 100).toFixed(0), "%)"), /*#__PURE__*/React.createElement("strong", {
+      style: {
+        color: C.teal
+      }
+    }, fmt(vacationBalance(s)))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 6,
@@ -5299,7 +5941,17 @@ function StaffTab({
       small: true,
       onClick: () => attemptClock(s.id),
       color: s.clockedIn ? C.red : C.green
-    }, s.clockedIn ? "Clock Out" : "Clock In"), /*#__PURE__*/React.createElement(Btn, {
+    }, s.clockedIn ? "Clock Out" : "Clock In"), s.type !== "Owner" && /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        setVacStaffId(s.id);
+        setVacGross("");
+        setVacPayoutAmt("");
+        setVacNote("");
+      },
+      color: C.teal,
+      outline: true
+    }, "Vacation"), /*#__PURE__*/React.createElement(Btn, {
       small: true,
       onClick: () => openEdit(s),
       color: C.gold
@@ -5313,7 +5965,7 @@ function StaffTab({
     style: {
       background: C.lightGold
     }
-  }, /*#__PURE__*/React.createElement(SH, null, "Payroll Summary (", payPeriod, ")"), /*#__PURE__*/React.createElement("table", {
+  }, /*#__PURE__*/React.createElement(SH, null, "Payroll Summary (", payPeriod, ") — estimate only, not remittance-grade"), /*#__PURE__*/React.createElement("table", {
     style: {
       width: "100%",
       borderCollapse: "collapse",
@@ -5323,7 +5975,7 @@ function StaffTab({
     style: {
       background: C.green
     }
-  }, ["Name", "Position", "Rate", "Hrs/Wk", "Gross", "CPP 5.95%", "EI 1.66%", "Net Est."].map(h => /*#__PURE__*/React.createElement("th", {
+  }, ["Name", "Position", "Rate", "Hrs/Wk", "Gross", "Est. CPP", "Est. CPP2", "Est. EI", "Net Est."].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: {
       color: C.white,
@@ -5332,6 +5984,7 @@ function StaffTab({
     }
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, staff.filter(s => s.type !== "Owner").map((s, i) => {
     const gross = s.hourlyRate * s.hoursPerWeek * mult;
+    const est = estimateDeductions(gross);
     const pos = getPos(s);
     return /*#__PURE__*/React.createElement("tr", {
       key: s.id,
@@ -5369,18 +6022,23 @@ function StaffTab({
         padding: "7px 12px",
         color: C.charcoal
       }
-    }, fmt(gross * 0.0595)), /*#__PURE__*/React.createElement("td", {
+    }, fmt(est.cpp)), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "7px 12px",
         color: C.charcoal
       }
-    }, fmt(gross * 0.0166)), /*#__PURE__*/React.createElement("td", {
+    }, est.cpp2 > 0 ? fmt(est.cpp2) : "--"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "7px 12px",
+        color: C.charcoal
+      }
+    }, fmt(est.ei)), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "7px 12px",
         fontWeight: 700,
         color: C.green
       }
-    }, fmt(gross * 0.9239)));
+    }, fmt(gross - est.totalDeductions)));
   })), /*#__PURE__*/React.createElement("tfoot", null, /*#__PURE__*/React.createElement("tr", {
     style: {
       background: C.border
@@ -5397,29 +6055,37 @@ function StaffTab({
       fontWeight: 800,
       color: C.red
     }
-  }, fmt(payrollTotal)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "9px 12px",
-      fontWeight: 700
-    }
-  }, fmt(payrollTotal * 0.0595)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "9px 12px",
-      fontWeight: 700
-    }
-  }, fmt(payrollTotal * 0.0166)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "9px 12px",
-      fontWeight: 800,
-      color: C.green
-    }
-  }, fmt(payrollTotal * 0.9239))))), /*#__PURE__*/React.createElement("div", {
+  }, fmt(payrollTotal)), (() => {
+    const totalEst = estimateDeductions(payrollTotal);
+    return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "9px 12px",
+        fontWeight: 700
+      }
+    }, fmt(totalEst.cpp)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "9px 12px",
+        fontWeight: 700
+      }
+    }, totalEst.cpp2 > 0 ? fmt(totalEst.cpp2) : "--"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "9px 12px",
+        fontWeight: 700
+      }
+    }, fmt(totalEst.ei)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "9px 12px",
+        fontWeight: 800,
+        color: C.green
+      }
+    }, fmt(payrollTotal - totalEst.totalDeductions)));
+  })()))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: C.charcoal,
       marginTop: 8
     }
-  }, "* Estimates only. Consult a CRA payroll calculator or accountant.")));
+  }, "* Rough same-year estimate for planning only — not a real remittance calculation. Confirm actual amounts with CRA's PDOC calculator or a payroll provider before paying anyone. Income tax withholding isn't estimated here at all since it depends on each employee's TD1 claim amounts."))));
 }
 
 // -- ACCOUNTS TAB -------------------------------------------------------------
@@ -12842,6 +13508,7 @@ function App() {
   const [cateringEvents, setCateringEvents, catLoaded] = usePersistedState("tog-catering", CATERING_INIT);
   const [staff, setStaff, staffLoaded] = usePersistedState("tog-staff", STAFF_INIT);
   const [positions, setPositions, posLoaded] = usePersistedState("tog-positions", POSITIONS_INIT);
+  const [schedule, setSchedule, schedLoaded] = usePersistedState("tog-schedule", []);
   const [kitchenOrders, setKitchenOrders] = useSharedState("tog-kitchen-queue", []);
   // Tab session hooks MUST be before early return (Rules of Hooks)
   const [tabSessions, setTabSessions] = useState({});
@@ -13176,7 +13843,11 @@ function App() {
   }), tab === "staff" && /*#__PURE__*/React.createElement(StaffTab, {
     staff: staff,
     setStaff: setStaff,
-    positions: positions
+    positions: positions,
+    settings: settings,
+    setSettings: setSettings,
+    schedule: schedule,
+    setSchedule: setSchedule
   }), tab === "catering" && /*#__PURE__*/React.createElement(CateringTab, {
     cateringEvents: cateringEvents,
     setCateringEvents: setCateringEvents,
