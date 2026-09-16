@@ -13513,6 +13513,53 @@ function App() {
   // Tab session hooks MUST be before early return (Rules of Hooks)
   const [tabSessions, setTabSessions] = useState({});
   const [pendingTab, setPendingTab] = useState(null);
+  const [showClockModal, setShowClockModal] = useState(false);
+  const [clockPinInput, setClockPinInput] = useState("");
+  const [clockError, setClockError] = useState("");
+  const [clockResult, setClockResult] = useState(null);
+
+  // Global clock in/out — identified purely by the employee's own PIN, no
+  // need to find your name in a list first. Works from any tab, since it
+  // lives in the header rather than inside Staff.
+  const handleGlobalClock = () => {
+    const s = staff.find(x => x.pin && x.pin === clockPinInput);
+    if (!s) {
+      setClockError("PIN not recognized");
+      return;
+    }
+    const clockedIn = !s.clockedIn;
+    let history = [...(s.clockHistory || [])];
+    if (clockedIn) history = [...history, {
+      date: today(),
+      clockIn: nowStr(),
+      clockOut: null
+    }];else {
+      let li = -1;
+      history.forEach((h, i) => {
+        if (h.clockOut === null) li = i;
+      });
+      if (li >= 0) history[li] = {
+        ...history[li],
+        clockOut: nowStr()
+      };
+    }
+    setStaff(staff.map(x => x.id === s.id ? {
+      ...x,
+      clockedIn,
+      clockHistory: history
+    } : x));
+    setClockResult({
+      name: s.name,
+      clockedIn,
+      time: nowStr()
+    });
+    setClockPinInput("");
+    setClockError("");
+    setTimeout(() => {
+      setShowClockModal(false);
+      setClockResult(null);
+    }, 2000);
+  };
   const allLoaded = sLoaded && mLoaded && salLoaded && expLoaded && accLoaded && invLoaded && recLoaded && refLoaded && staffLoaded && posLoaded;
   if (!allLoaded) return /*#__PURE__*/React.createElement(LoadingScreen, null);
   const TAB_PERM_KEY = {
@@ -13635,7 +13682,85 @@ function App() {
       setPendingTab(null);
     },
     onCancel: () => setPendingTab(null)
-  }), /*#__PURE__*/React.createElement("div", {
+  }), showClockModal && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: "rgba(0,0,0,0.65)",
+      zIndex: 1000,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      width: 320,
+      textAlign: "center",
+      border: "2px solid " + C.gold
+    }
+  }, clockResult ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 36,
+      marginBottom: 8
+    }
+  }, clockResult.clockedIn ? "🟢" : "🔴"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 18,
+      marginBottom: 4
+    }
+  }, clockResult.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: clockResult.clockedIn ? C.green : C.red,
+      fontWeight: 700
+    }
+  }, clockResult.clockedIn ? "Clocked In" : "Clocked Out", " at ", clockResult.time)) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 20,
+      marginBottom: 10
+    }
+  }, "Clock In / Out"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      marginBottom: 12
+    }
+  }, "Enter your PIN — it clocks you in if you're out, or out if you're in."), /*#__PURE__*/React.createElement(Inp, {
+    type: "password",
+    value: clockPinInput,
+    onChange: v => {
+      setClockPinInput(v);
+      setClockError("");
+    },
+    placeholder: "Your PIN",
+    style: {
+      textAlign: "center",
+      letterSpacing: 8,
+      fontSize: 20,
+      marginBottom: 8
+    }
+  }), clockError && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontSize: 12,
+      marginBottom: 8
+    }
+  }, clockError), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: handleGlobalClock
+  }, "Confirm"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setShowClockModal(false),
+    color: C.charcoal,
+    outline: true
+  }, "Cancel"))))), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.dark,
       position: "sticky",
@@ -13713,7 +13838,25 @@ function App() {
       fontWeight: 700,
       fontSize: 12
     }
-  }, readyOrderCount, " ready"), /*#__PURE__*/React.createElement("span", {
+  }, readyOrderCount, " ready"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setShowClockModal(true);
+      setClockPinInput("");
+      setClockError("");
+      setClockResult(null);
+    },
+    style: {
+      background: C.gold,
+      color: C.dark,
+      border: "none",
+      borderRadius: 20,
+      padding: "6px 16px",
+      fontWeight: 800,
+      fontSize: 13,
+      cursor: "pointer",
+      fontFamily: "inherit"
+    }
+  }, "⏱️ Clock In / Out"), /*#__PURE__*/React.createElement("span", {
     style: {
       color: "#888"
     }
