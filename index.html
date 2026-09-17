@@ -1569,6 +1569,102 @@ function LoadingScreen() {
   }, "Loading your data..."));
 }
 
+// -- STAFF PIN MODAL ----------------------------------------------------------
+// Unlike ManagerPINModal, this accepts ANY valid staff PIN — everyone has
+// their own way into the Staff tab, it just shows something different once
+// they're in, depending on whose PIN it was.
+function StaffPINModal({
+  staff,
+  onSuccess,
+  onCancel
+}) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const verify = () => {
+    if (!pin) {
+      setError("Please enter a PIN.");
+      return;
+    }
+    const match = (staff || []).find(m => m.pin === pin);
+    if (match) {
+      onSuccess(match.name, match.positionId, match.id);
+    } else {
+      setError("PIN not recognized.");
+      setPin("");
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: "rgba(0,0,0,0.7)",
+      zIndex: 999,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      width: 340,
+      textAlign: "center",
+      border: "2px solid " + C.gold
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 22,
+      marginBottom: 6
+    }
+  }, "👤"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 16,
+      marginBottom: 4
+    }
+  }, "Staff"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.charcoal,
+      marginBottom: 16
+    }
+  }, "Enter your PIN. Owners and Managers see the full directory — everyone else sees just their own info."), /*#__PURE__*/React.createElement(Inp, {
+    type: "password",
+    value: pin,
+    onChange: v => {
+      setPin(v);
+      setError("");
+    },
+    placeholder: "Your PIN",
+    style: {
+      textAlign: "center",
+      letterSpacing: 8,
+      fontSize: 20,
+      marginBottom: 8
+    }
+  }), error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.red,
+      fontSize: 12,
+      marginBottom: 8
+    }
+  }, error), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      justifyContent: "center",
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement(Btn, {
+    onClick: verify
+  }, "Confirm"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: onCancel,
+    color: C.charcoal,
+    outline: true
+  }, "Cancel"))));
+}
+
 // -- MANAGER PIN MODAL --------------------------------------------------------
 // permission: "authorizeDiscounts" | "authorizeRefunds" | "manageMenu" | etc.
 function ManagerPINModal({
@@ -4603,6 +4699,455 @@ function ExpensesTab({
 }
 
 // -- STAFF TAB ----------------------------------------------------------------
+// -- MY INFO TAB (non-admin staff view) ---------------------------------------
+// What a regular employee sees when their own PIN unlocks Staff — just
+// themselves: their own shifts, hours, vacation balance, and a form they
+// fill in themselves. No directory, no other employee's data, no payroll,
+// no admin controls exist anywhere in this component.
+function MyInfoTab({
+  staffId,
+  staff,
+  setStaff,
+  schedule,
+  requests,
+  setRequests
+}) {
+  const s = staff.find(x => x.id === staffId);
+  const [form, setForm] = useState(s ? {
+    address: s.address || "",
+    contactNumber: s.contactNumber || "",
+    nextOfKin: s.nextOfKin || "",
+    sin: s.sin || "",
+    benefits: s.benefits || "",
+    td1Federal: s.td1Federal || "",
+    td1BC: s.td1BC || "",
+    td1FiledDate: s.td1FiledDate || ""
+  } : null);
+  const [showSin, setShowSin] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const REQUEST_TYPES = ["Time Off", "Shift Swap", "Schedule Change", "Pay Advance", "Other"];
+  const [reqType, setReqType] = useState("Time Off");
+  const [reqStart, setReqStart] = useState(today());
+  const [reqEnd, setReqEnd] = useState(today());
+  const [reqDesc, setReqDesc] = useState("");
+  const submitRequest = () => {
+    if (reqType !== "Time Off" && !reqDesc.trim()) return;
+    setRequests([...requests, {
+      id: Date.now(),
+      staffId,
+      type: reqType,
+      startDate: reqType === "Time Off" ? reqStart : null,
+      endDate: reqType === "Time Off" ? reqEnd : null,
+      description: reqDesc.trim(),
+      status: "pending",
+      submittedDate: today(),
+      responseNote: "",
+      resolvedDate: null
+    }]);
+    setReqDesc("");
+    setReqType("Time Off");
+    setReqStart(today());
+    setReqEnd(today());
+  };
+  const myRequests = [...requests].filter(r => r.staffId === staffId).sort((a, b) => b.submittedDate.localeCompare(a.submittedDate));
+  const REQ_COLORS = {
+    pending: C.orange,
+    approved: C.green,
+    denied: C.red
+  };
+  if (!s || !form) return /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("p", {
+    style: {
+      textAlign: "center",
+      color: C.gray,
+      padding: 20
+    }
+  }, "Could not find your staff record. Ask an owner or manager to check your PIN is set correctly."));
+  const vacBalance = (s.vacationLedger || []).reduce((bal, e) => e.type === "accrued" ? bal + e.amount : bal - e.amount, 0);
+  const myShifts = [...schedule].filter(sh => sh.staffId === s.id && sh.date >= today()).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const recentClocks = [...(s.clockHistory || [])].slice(-5).reverse();
+  const save = () => {
+    setStaff(staff.map(x => x.id === staffId ? {
+      ...x,
+      ...form
+    } : x));
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 600,
+      margin: "0 auto"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 18
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 22
+    }
+  }, s.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.charcoal
+    }
+  }, s.role)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: 10,
+      marginBottom: 18
+    }
+  }, /*#__PURE__*/React.createElement(Stat, {
+    icon: "🏖",
+    label: "Vacation Balance",
+    val: fmt(vacBalance),
+    color: C.teal
+  }), /*#__PURE__*/React.createElement(Stat, {
+    icon: "📅",
+    label: "Upcoming Shifts",
+    val: myShifts.length
+  }), /*#__PURE__*/React.createElement(Stat, {
+    icon: s.clockedIn ? "&#x1F7E2;" : "&#x26AA;",
+    label: "Status",
+    val: s.clockedIn ? "Clocked In" : "Clocked Out",
+    color: s.clockedIn ? C.green : C.gray
+  })), myShifts.length > 0 && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Your Upcoming Shifts"), myShifts.map(sh => /*#__PURE__*/React.createElement("div", {
+    key: sh.id,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 13,
+      padding: "8px 12px",
+      background: C.cream,
+      borderRadius: 6,
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", null, sh.date), /*#__PURE__*/React.createElement("span", null, sh.start, " – ", sh.end)))), recentClocks.length > 0 && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Your Recent Clock History"), recentClocks.map((h, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      fontSize: 12,
+      padding: "6px 12px",
+      background: C.cream,
+      borderRadius: 6,
+      marginBottom: 5,
+      color: C.charcoal
+    }
+  }, /*#__PURE__*/React.createElement("span", null, h.date), /*#__PURE__*/React.createElement("span", null, h.clockIn, " – ", h.clockOut || "still in")))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Request Something From Your Employer"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      marginBottom: 12
+    }
+  }, "Time off, a shift swap, a schedule change, a pay advance, or anything else — submit it here and it goes to the owners to approve or deny."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: reqType === "Time Off" ? "1fr 1fr 1fr" : "1fr",
+      gap: 10,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Type"), /*#__PURE__*/React.createElement(Sel, {
+    value: reqType,
+    onChange: setReqType,
+    options: REQUEST_TYPES
+  })), reqType === "Time Off" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "From"), /*#__PURE__*/React.createElement(Inp, {
+    type: "date",
+    value: reqStart,
+    onChange: setReqStart
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "To"), /*#__PURE__*/React.createElement(Inp, {
+    type: "date",
+    value: reqEnd,
+    onChange: setReqEnd
+  })))), /*#__PURE__*/React.createElement(Inp, {
+    value: reqDesc,
+    onChange: setReqDesc,
+    placeholder: reqType === "Time Off" ? "Reason (optional)" : "Describe what you're requesting",
+    style: {
+      marginBottom: 10
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    onClick: submitRequest,
+    color: C.orange,
+    style: {
+      width: "100%"
+    }
+  }, "Submit Request"), myRequests.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13,
+      marginBottom: 8
+    }
+  }, "Your Requests"), myRequests.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.id,
+    style: {
+      background: C.cream,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 8,
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 700
+    }
+  }, r.type, r.startDate ? " — " + r.startDate + (r.endDate && r.endDate !== r.startDate ? " to " + r.endDate : "") : ""), /*#__PURE__*/React.createElement(Badge, {
+    small: true,
+    color: REQ_COLORS[r.status]
+  }, r.status)), r.description && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.charcoal,
+      marginTop: 4
+    }
+  }, r.description), r.responseNote && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.charcoal,
+      marginTop: 4,
+      fontStyle: "italic"
+    }
+  }, "Response: ", r.responseNote), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.gray,
+      fontSize: 11,
+      marginTop: 4
+    }
+  }, "Submitted ", r.submittedDate))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Your Information"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      marginBottom: 12
+    }
+  }, "Keep this up to date — your employer uses it for payroll, emergency contact, and tax filing. Only you and the owners can see this."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 10,
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "span 2"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Address"), /*#__PURE__*/React.createElement(Inp, {
+    value: form.address,
+    onChange: v => setForm({
+      ...form,
+      address: v
+    }),
+    placeholder: "Street, City, Province, Postal Code"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Contact Number"), /*#__PURE__*/React.createElement(Inp, {
+    value: form.contactNumber,
+    onChange: v => setForm({
+      ...form,
+      contactNumber: v
+    }),
+    placeholder: "e.g. 250 555 0123"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Next of Kin"), /*#__PURE__*/React.createElement(Inp, {
+    value: form.nextOfKin,
+    onChange: v => setForm({
+      ...form,
+      nextOfKin: v
+    }),
+    placeholder: "Name and phone number"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "span 2"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "SIN"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    type: showSin ? "text" : "password",
+    value: form.sin,
+    onChange: v => setForm({
+      ...form,
+      sin: v
+    }),
+    placeholder: "000 000 000",
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowSin(!showSin),
+    style: {
+      background: C.cream,
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      padding: "8px 10px",
+      cursor: "pointer",
+      fontSize: 11,
+      fontFamily: "inherit"
+    }
+  }, showSin ? "Hide" : "Show"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      gridColumn: "span 2"
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Benefits"), /*#__PURE__*/React.createElement(Inp, {
+    value: form.benefits,
+    onChange: v => setForm({
+      ...form,
+      benefits: v
+    }),
+    placeholder: "e.g. Extended health, dental"
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 10,
+      fontSize: 11,
+      color: C.charcoal
+    }
+  }, "TD1 (federal) and TD1BC (provincial) — the forms that tell your employer how much tax to withhold. Enter your claim amount from each form and when you filed it."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: 10,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Federal TD1 claim ($)"), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: form.td1Federal,
+    onChange: v => setForm({
+      ...form,
+      td1Federal: v
+    }),
+    placeholder: "e.g. 16452"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "BC TD1 claim ($)"), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: form.td1BC,
+    onChange: v => setForm({
+      ...form,
+      td1BC: v
+    }),
+    placeholder: "e.g. 13216"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Filed date"), /*#__PURE__*/React.createElement(Inp, {
+    type: "date",
+    value: form.td1FiledDate,
+    onChange: v => setForm({
+      ...form,
+      td1FiledDate: v
+    })
+  }))), saved ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#E8F5E9",
+      borderRadius: 8,
+      padding: 10,
+      textAlign: "center",
+      color: C.green,
+      fontWeight: 700
+    }
+  }, "Saved!") : /*#__PURE__*/React.createElement(Btn, {
+    onClick: save,
+    style: {
+      width: "100%"
+    },
+    color: C.teal
+  }, "Save My Information")));
+}
 function StaffTab({
   staff,
   setStaff,
@@ -4610,9 +5155,30 @@ function StaffTab({
   settings,
   setSettings,
   schedule,
-  setSchedule
+  setSchedule,
+  requests,
+  setRequests
 }) {
   const [staffView, setStaffView] = useState("directory");
+  const [respondingId, setRespondingId] = useState(null);
+  const [responseNote, setResponseNote] = useState("");
+  const pendingRequests = requests.filter(r => r.status === "pending").sort((a, b) => a.submittedDate.localeCompare(b.submittedDate));
+  const resolvedRequests = requests.filter(r => r.status !== "pending").sort((a, b) => (b.resolvedDate || "").localeCompare(a.resolvedDate || ""));
+  const respondToRequest = (id, status) => {
+    setRequests(requests.map(r => r.id === id ? {
+      ...r,
+      status,
+      responseNote: responseNote.trim(),
+      resolvedDate: today()
+    } : r));
+    setRespondingId(null);
+    setResponseNote("");
+  };
+  const REQ_COLORS2 = {
+    pending: C.orange,
+    approved: C.green,
+    denied: C.red
+  };
   const [loaded] = [true]; // staff is passed from App (already loaded)
   const [addMode, setAddMode] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -4685,6 +5251,10 @@ function StaffTab({
   };
   const removeShift = id => setSchedule(schedule.filter(x => x.id !== id));
   const upcomingShifts = [...schedule].filter(sh => sh.date >= today()).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  // Flags a scheduling conflict against any APPROVED time-off request —
+  // pending or denied ones don't block anything, only approved does.
+  const timeOffConflict = (staffId, date) => (requests || []).find(r => r.staffId === parseInt(staffId) && r.type === "Time Off" && r.status === "approved" && r.startDate && date >= r.startDate && date <= (r.endDate || r.startDate));
+  const shiftConflict = timeOffConflict(shiftStaffId, shiftDate);
   const blankForm = {
     name: "",
     role: "",
@@ -5269,7 +5839,7 @@ function StaffTab({
       marginTop: 3,
       fontWeight: 700
     }
-  }, "PIN: ", form.pin))), /*#__PURE__*/React.createElement(SH, null, "Personal & Employment Details"), /*#__PURE__*/React.createElement("div", {
+  }, "PIN: ", form.pin))), /*#__PURE__*/React.createElement(SH, null, "Employment Status"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
@@ -5277,74 +5847,6 @@ function StaffTab({
       marginBottom: 12
     }
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: {
-      fontSize: 12,
-      color: C.charcoal,
-      display: "block",
-      marginBottom: 4
-    }
-  }, "SIN"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement(Inp, {
-    type: showSin ? "text" : "password",
-    value: form.sin,
-    onChange: v => setForm({
-      ...form,
-      sin: v
-    }),
-    placeholder: "000 000 000",
-    style: {
-      flex: 1
-    }
-  }), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setShowSin(!showSin),
-    style: {
-      background: C.cream,
-      border: "1px solid " + C.border,
-      borderRadius: 6,
-      padding: "8px 10px",
-      cursor: "pointer",
-      fontSize: 11,
-      fontFamily: "inherit",
-      whiteSpace: "nowrap"
-    }
-  }, showSin ? "Hide" : "Show"))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: {
-      fontSize: 12,
-      color: C.charcoal,
-      display: "block",
-      marginBottom: 4
-    }
-  }, "Contact Number"), /*#__PURE__*/React.createElement(Inp, {
-    value: form.contactNumber,
-    onChange: v => setForm({
-      ...form,
-      contactNumber: v
-    }),
-    placeholder: "e.g. 250 555 0123"
-  })), /*#__PURE__*/React.createElement("div", {
-    style: {
-      gridColumn: "span 2"
-    }
-  }, /*#__PURE__*/React.createElement("label", {
-    style: {
-      fontSize: 12,
-      color: C.charcoal,
-      display: "block",
-      marginBottom: 4
-    }
-  }, "Address"), /*#__PURE__*/React.createElement(Inp, {
-    value: form.address,
-    onChange: v => setForm({
-      ...form,
-      address: v
-    }),
-    placeholder: "Street, City, Province, Postal Code"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 12,
       color: C.charcoal,
@@ -5372,95 +5874,16 @@ function StaffTab({
       employmentBasis: v
     }),
     options: ["Full-time", "Part-time"]
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }))), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 12,
-      color: C.charcoal,
-      display: "block",
-      marginBottom: 4
-    }
-  }, "Next of Kin"), /*#__PURE__*/React.createElement(Inp, {
-    value: form.nextOfKin,
-    onChange: v => setForm({
-      ...form,
-      nextOfKin: v
-    }),
-    placeholder: "Name and phone number"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: {
-      fontSize: 12,
-      color: C.charcoal,
-      display: "block",
-      marginBottom: 4
-    }
-  }, "Benefits"), /*#__PURE__*/React.createElement(Inp, {
-    value: form.benefits,
-    onChange: v => setForm({
-      ...form,
-      benefits: v
-    }),
-    placeholder: "e.g. Extended health, dental"
-  }))), /*#__PURE__*/React.createElement(SH, null, "TD1 (Tax Credits)"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: C.lightGold,
+      background: "#E8F5E9",
       borderRadius: 8,
-      padding: 10,
-      marginBottom: 10,
-      fontSize: 11,
+      padding: 12,
+      marginBottom: 12,
+      fontSize: 12,
       color: C.charcoal
     }
-  }, "Every employee fills out a federal TD1 and a BC TD1BC on hire, and updates them if their personal situation changes. Storing the claim amount and filed date here is a record — it doesn't calculate withholding for you (see the Payroll Summary note below on that)."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr 1fr",
-      gap: 12,
-      marginBottom: 12
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: {
-      fontSize: 12,
-      color: C.charcoal,
-      display: "block",
-      marginBottom: 4
-    }
-  }, "Federal TD1 claim amount ($)"), /*#__PURE__*/React.createElement(Inp, {
-    type: "number",
-    value: form.td1Federal || "",
-    onChange: v => setForm({
-      ...form,
-      td1Federal: v
-    }),
-    placeholder: "e.g. 16452"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: {
-      fontSize: 12,
-      color: C.charcoal,
-      display: "block",
-      marginBottom: 4
-    }
-  }, "BC TD1 claim amount ($)"), /*#__PURE__*/React.createElement(Inp, {
-    type: "number",
-    value: form.td1BC || "",
-    onChange: v => setForm({
-      ...form,
-      td1BC: v
-    }),
-    placeholder: "e.g. 13216"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: {
-      fontSize: 12,
-      color: C.charcoal,
-      display: "block",
-      marginBottom: 4
-    }
-  }, "TD1 filed date"), /*#__PURE__*/React.createElement(Inp, {
-    type: "date",
-    value: form.td1FiledDate || "",
-    onChange: v => setForm({
-      ...form,
-      td1FiledDate: v
-    })
-  }))), (() => {
+  }, "Address, contact number, next of kin, SIN, benefits, and TD1 tax credit amounts are filled in by the employee themselves, using their own PIN in the ", /*#__PURE__*/React.createElement("strong", null, "My Info"), " button at the top of the app — not entered here. Once they've filled it in, you can view it from their row in this directory."), (() => {
     const pos = (positions || POSITIONS_INIT).find(p => p.id === parseInt(form.positionId));
     if (!pos) return null;
     const granted = PERMISSIONS.filter(p => pos.permissions && pos.permissions[p.key]);
@@ -5529,7 +5952,163 @@ function StaffTab({
     onClick: () => setStaffView("schedule"),
     color: staffView === "schedule" ? C.green : C.charcoal,
     outline: staffView !== "schedule"
-  }, "Schedule (", upcomingShifts.length, ")")), staffView === "schedule" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+  }, "Schedule (", upcomingShifts.length, ")"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setStaffView("requests"),
+    color: staffView === "requests" ? C.orange : C.charcoal,
+    outline: staffView !== "requests"
+  }, "Requests ", pendingRequests.length > 0 ? "(" + pendingRequests.length + ")" : "")), staffView === "requests" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: "hidden",
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 14px",
+      background: C.lightGold,
+      fontSize: 13,
+      fontWeight: 700
+    }
+  }, "Pending (", pendingRequests.length, ")"), pendingRequests.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 20,
+      textAlign: "center",
+      color: C.gray,
+      fontSize: 13
+    }
+  }, "Nothing waiting on you.") : pendingRequests.map(r => {
+    const emp = staff.find(x => x.id === r.staffId);
+    return /*#__PURE__*/React.createElement("div", {
+      key: r.id,
+      style: {
+        padding: "12px 14px",
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 700
+      }
+    }, emp ? emp.name : "(removed)"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.charcoal,
+        marginLeft: 8
+      }
+    }, r.type, r.startDate ? " — " + r.startDate + (r.endDate && r.endDate !== r.startDate ? " to " + r.endDate : "") : "")), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: C.gray
+      }
+    }, "Submitted ", r.submittedDate)), r.description && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: C.charcoal,
+        marginTop: 6
+      }
+    }, r.description), respondingId === r.id ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10
+      }
+    }, /*#__PURE__*/React.createElement(Inp, {
+      value: responseNote,
+      onChange: setResponseNote,
+      placeholder: "Note back to them (optional)",
+      style: {
+        marginBottom: 8
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => respondToRequest(r.id, "approved"),
+      color: C.green
+    }, "Approve"), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => respondToRequest(r.id, "denied"),
+      color: C.red
+    }, "Deny"), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        setRespondingId(null);
+        setResponseNote("");
+      },
+      color: C.charcoal,
+      outline: true
+    }, "Cancel"))) : /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        setRespondingId(r.id);
+        setResponseNote("");
+      },
+      color: C.blue,
+      outline: true,
+      style: {
+        marginTop: 8
+      }
+    }, "Respond"));
+  })), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 14px",
+      background: C.cream,
+      fontSize: 13,
+      fontWeight: 700
+    }
+  }, "History"), resolvedRequests.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 20,
+      textAlign: "center",
+      color: C.gray,
+      fontSize: 13
+    }
+  }, "Nothing resolved yet.") : resolvedRequests.map(r => {
+    const emp = staff.find(x => x.id === r.staffId);
+    return /*#__PURE__*/React.createElement("div", {
+      key: r.id,
+      style: {
+        padding: "10px 14px",
+        borderBottom: "1px solid " + C.border,
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 600
+      }
+    }, emp ? emp.name : "(removed)"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.charcoal,
+        marginLeft: 8
+      }
+    }, r.type, r.startDate ? " — " + r.startDate : "")), /*#__PURE__*/React.createElement(Badge, {
+      small: true,
+      color: REQ_COLORS2[r.status]
+    }, r.status)), r.responseNote && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.charcoal,
+        marginTop: 4,
+        fontStyle: "italic"
+      }
+    }, r.responseNote));
+  }))), staffView === "schedule" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 16,
       background: C.lightGold,
@@ -5598,8 +6177,19 @@ function StaffTab({
     value: shiftEnd,
     onChange: setShiftEnd
   })), /*#__PURE__*/React.createElement(Btn, {
-    onClick: addShift
-  }, "+ Add Shift"))), /*#__PURE__*/React.createElement(Card, {
+    onClick: () => {
+      if (shiftConflict && !window.confirm((staff.find(s => s.id === parseInt(shiftStaffId)) || {}).name + " has approved time off covering this date. Schedule them anyway?")) return;
+      addShift();
+    },
+    color: shiftConflict ? C.red : C.green
+  }, "+ Add Shift")), shiftConflict && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8,
+      color: C.red,
+      fontSize: 12,
+      fontWeight: 700
+    }
+  }, "⚠️ Approved time off covers this date", shiftConflict.endDate && shiftConflict.endDate !== shiftConflict.startDate ? " (" + shiftConflict.startDate + " to " + shiftConflict.endDate + ")" : "", ".")), /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 0,
       overflow: "hidden"
@@ -5641,17 +6231,24 @@ function StaffTab({
       clockIn: sh.start,
       clockOut: sh.end
     });
+    const conflict = timeOffConflict(sh.staffId, sh.date);
     return /*#__PURE__*/React.createElement("tr", {
       key: sh.id,
       style: {
-        background: i % 2 === 0 ? C.white : C.cream,
+        background: conflict ? "#FFEBEE" : i % 2 === 0 ? C.white : C.cream,
         borderBottom: "1px solid " + C.border
       }
     }, /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "8px 12px"
       }
-    }, sh.date), /*#__PURE__*/React.createElement("td", {
+    }, sh.date, conflict && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: C.red,
+        fontWeight: 700
+      }
+    }, "⚠️ Approved time off")), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "8px 12px",
         fontWeight: 600
@@ -13509,6 +14106,7 @@ function App() {
   const [staff, setStaff, staffLoaded] = usePersistedState("tog-staff", STAFF_INIT);
   const [positions, setPositions, posLoaded] = usePersistedState("tog-positions", POSITIONS_INIT);
   const [schedule, setSchedule, schedLoaded] = usePersistedState("tog-schedule", []);
+  const [requests, setRequests, reqLoaded] = usePersistedState("tog-requests", []);
   const [kitchenOrders, setKitchenOrders] = useSharedState("tog-kitchen-queue", []);
   // Tab session hooks MUST be before early return (Rules of Hooks)
   const [tabSessions, setTabSessions] = useState({});
@@ -13560,7 +14158,7 @@ function App() {
       setClockResult(null);
     }, 2000);
   };
-  const allLoaded = sLoaded && mLoaded && salLoaded && expLoaded && accLoaded && invLoaded && recLoaded && refLoaded && staffLoaded && posLoaded;
+  const allLoaded = sLoaded && mLoaded && salLoaded && expLoaded && accLoaded && invLoaded && recLoaded && refLoaded && staffLoaded && posLoaded && reqLoaded;
   if (!allLoaded) return /*#__PURE__*/React.createElement(LoadingScreen, null);
   const TAB_PERM_KEY = {
     pos: null,
@@ -13591,6 +14189,11 @@ function App() {
   const canSeeRecipes = invSession ? invSession.positionId === 1 || (() => {
     const pos = (positions || POSITIONS_INIT).find(p => p.id === invSession.positionId);
     return !!(pos && pos.permissions && pos.permissions.accessRecipes);
+  })() : false;
+  const staffSession = tabSessions["staff"];
+  const canManageStaff = staffSession ? (() => {
+    const pos = (positions || POSITIONS_INIT).find(p => p.id === staffSession.positionId);
+    return !!(pos && pos.permissions && pos.permissions.accessStaff);
   })() : false;
   const deductInventory = saleItems => {
     setInventory(prev => {
@@ -13665,7 +14268,22 @@ function App() {
       background: "#F0EBE0",
       fontFamily: "Georgia,serif"
     }
-  }, pendingTab && /*#__PURE__*/React.createElement(ManagerPINModal, {
+  }, pendingTab && pendingTab === "staff" && /*#__PURE__*/React.createElement(StaffPINModal, {
+    staff: staff,
+    onSuccess: (name, posId, staffId) => {
+      setTabSessions(prev => ({
+        ...prev,
+        staff: {
+          name,
+          positionId: posId,
+          staffId
+        }
+      }));
+      setTab("staff");
+      setPendingTab(null);
+    },
+    onCancel: () => setPendingTab(null)
+  }), pendingTab && pendingTab !== "staff" && /*#__PURE__*/React.createElement(ManagerPINModal, {
     staff: staff,
     positions: positions || POSITIONS_INIT,
     permission: TAB_PERM_KEY[pendingTab],
@@ -13983,15 +14601,24 @@ function App() {
     expenses: expenses,
     setExpenses: setExpenses,
     settings: settings
-  }), tab === "staff" && /*#__PURE__*/React.createElement(StaffTab, {
+  }), tab === "staff" && (canManageStaff ? /*#__PURE__*/React.createElement(StaffTab, {
     staff: staff,
     setStaff: setStaff,
     positions: positions,
     settings: settings,
     setSettings: setSettings,
     schedule: schedule,
-    setSchedule: setSchedule
-  }), tab === "catering" && /*#__PURE__*/React.createElement(CateringTab, {
+    setSchedule: setSchedule,
+    requests: requests,
+    setRequests: setRequests
+  }) : /*#__PURE__*/React.createElement(MyInfoTab, {
+    staffId: staffSession ? staffSession.staffId : null,
+    staff: staff,
+    setStaff: setStaff,
+    schedule: schedule,
+    requests: requests,
+    setRequests: setRequests
+  })), tab === "catering" && /*#__PURE__*/React.createElement(CateringTab, {
     cateringEvents: cateringEvents,
     setCateringEvents: setCateringEvents,
     menu: menu,
