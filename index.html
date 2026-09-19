@@ -4725,19 +4725,68 @@ function MyInfoTab({
   } : null);
   const [showSin, setShowSin] = useState(false);
   const [saved, setSaved] = useState(false);
-  const REQUEST_TYPES = ["Time Off", "Shift Swap", "Schedule Change", "Pay Advance", "Other"];
+  const REQUEST_CATEGORIES = [{
+    cat: "Documents",
+    icon: "📄",
+    types: ["Job Letter", "Pay Stubs", "Employment Contract Copy", "T4 Reissue"]
+  }, {
+    cat: "Medical",
+    icon: "🩺",
+    types: ["Sick Day Notification", "Medical Leave", "Return to Work"]
+  }, {
+    cat: "Vacation",
+    icon: "🏖️",
+    types: ["Time Off", "Vacation Payout Request", "Balance Inquiry"]
+  }, {
+    cat: "Money",
+    icon: "💰",
+    types: ["Raise", "Bonus", "Overtime Dispute", "Allowance"]
+  }, {
+    cat: "Schedule",
+    icon: "📅",
+    types: ["Day Off", "Shift Swap", "Flexible Hours", "Additional Hours"]
+  }, {
+    cat: "Family",
+    icon: "👨‍👩‍👧",
+    types: ["Family Responsibility Leave", "Bereavement Leave", "Compassionate Care Leave", "Parental Leave"]
+  }, {
+    cat: "Accommodation",
+    icon: "♿",
+    types: ["Modified Duties", "Modified Schedule", "Workplace Changes"]
+  }, {
+    cat: "Career",
+    icon: "📈",
+    types: ["Promotion", "Training / Certification", "Transfer", "Performance Review"]
+  }, {
+    cat: "Leaving a Job",
+    icon: "🚪",
+    types: ["Reference Letter"]
+  }, {
+    cat: "Other",
+    icon: "✏️",
+    types: ["Other"]
+  }];
+  const DATE_RANGE_TYPES = ["Time Off", "Medical Leave", "Family Responsibility Leave", "Bereavement Leave", "Compassionate Care Leave", "Parental Leave"];
+  const LETTER_TYPES = ["Job Letter", "Reference Letter"];
   const [reqType, setReqType] = useState("Time Off");
   const [reqStart, setReqStart] = useState(today());
   const [reqEnd, setReqEnd] = useState(today());
+  const [reqLetterFor, setReqLetterFor] = useState("");
+  const [reqLetterPurpose, setReqLetterPurpose] = useState("");
   const [reqDesc, setReqDesc] = useState("");
+  const isDateType = DATE_RANGE_TYPES.includes(reqType);
+  const isLetterType = LETTER_TYPES.includes(reqType);
   const submitRequest = () => {
-    if (reqType !== "Time Off" && !reqDesc.trim()) return;
+    if (isLetterType && !reqLetterFor.trim()) return;
+    if (!isDateType && !isLetterType && !reqDesc.trim()) return;
     setRequests([...requests, {
       id: Date.now(),
       staffId,
       type: reqType,
-      startDate: reqType === "Time Off" ? reqStart : null,
-      endDate: reqType === "Time Off" ? reqEnd : null,
+      startDate: isDateType ? reqStart : null,
+      endDate: isDateType ? reqEnd : null,
+      letterFor: isLetterType ? reqLetterFor.trim() : null,
+      letterPurpose: isLetterType ? reqLetterPurpose.trim() : null,
       description: reqDesc.trim(),
       status: "pending",
       submittedDate: today(),
@@ -4745,16 +4794,43 @@ function MyInfoTab({
       resolvedDate: null
     }]);
     setReqDesc("");
+    setReqLetterFor("");
+    setReqLetterPurpose("");
     setReqType("Time Off");
     setReqStart(today());
     setReqEnd(today());
   };
-  const myRequests = [...requests].filter(r => r.staffId === staffId).sort((a, b) => b.submittedDate.localeCompare(a.submittedDate));
+  const myRequests = [...requests].filter(r => r.staffId === staffId && r.type !== "Workplace Concern").sort((a, b) => b.submittedDate.localeCompare(a.submittedDate));
   const REQ_COLORS = {
     pending: C.orange,
     approved: C.green,
     denied: C.red
   };
+
+  // A workplace concern (harassment, discrimination, unpaid wages, safety)
+  // is not a request to approve or deny — it's something the employer has
+  // a legal duty to look into. Kept completely separate from the request
+  // list above, with no "denied" outcome at all.
+  const [concernDesc, setConcernDesc] = useState("");
+  const submitConcern = () => {
+    if (!concernDesc.trim()) return;
+    setRequests([...requests, {
+      id: Date.now(),
+      staffId,
+      type: "Workplace Concern",
+      startDate: null,
+      endDate: null,
+      letterFor: null,
+      letterPurpose: null,
+      description: concernDesc.trim(),
+      status: "pending",
+      submittedDate: today(),
+      responseNote: "",
+      resolvedDate: null
+    }]);
+    setConcernDesc("");
+  };
+  const myConcerns = [...requests].filter(r => r.staffId === staffId && r.type === "Workplace Concern").sort((a, b) => b.submittedDate.localeCompare(a.submittedDate));
   if (!s || !form) return /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement("p", {
     style: {
       textAlign: "center",
@@ -4854,25 +4930,43 @@ function MyInfoTab({
       color: C.charcoal,
       marginBottom: 12
     }
-  }, "Time off, a shift swap, a schedule change, a pay advance, or anything else — submit it here and it goes to the owners to approve or deny."), /*#__PURE__*/React.createElement("div", {
+  }, "Pick what this is about — the form adjusts to what's needed."), /*#__PURE__*/React.createElement("div", {
     style: {
-      display: "grid",
-      gridTemplateColumns: reqType === "Time Off" ? "1fr 1fr 1fr" : "1fr",
-      gap: 10,
       marginBottom: 10
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 11,
       color: C.charcoal,
       display: "block",
       marginBottom: 3
     }
-  }, "Type"), /*#__PURE__*/React.createElement(Sel, {
+  }, "Type"), /*#__PURE__*/React.createElement("select", {
     value: reqType,
-    onChange: setReqType,
-    options: REQUEST_TYPES
-  })), reqType === "Time Off" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    onChange: e => setReqType(e.target.value),
+    style: {
+      width: "100%",
+      padding: "8px 10px",
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      fontSize: 14,
+      background: C.white,
+      fontFamily: "inherit"
+    }
+  }, REQUEST_CATEGORIES.map(g => /*#__PURE__*/React.createElement("optgroup", {
+    key: g.cat,
+    label: g.icon + " " + g.cat
+  }, g.types.map(t => /*#__PURE__*/React.createElement("option", {
+    key: t,
+    value: t
+  }, t)))))), isDateType && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 10,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 11,
       color: C.charcoal,
@@ -4894,10 +4988,39 @@ function MyInfoTab({
     type: "date",
     value: reqEnd,
     onChange: setReqEnd
-  })))), /*#__PURE__*/React.createElement(Inp, {
+  }))), isLetterType && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 10,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Who is this letter for?"), /*#__PURE__*/React.createElement(Inp, {
+    value: reqLetterFor,
+    onChange: setReqLetterFor,
+    placeholder: "e.g. Bank, landlord, immigration"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Purpose (optional)"), /*#__PURE__*/React.createElement(Inp, {
+    value: reqLetterPurpose,
+    onChange: setReqLetterPurpose,
+    placeholder: "e.g. Mortgage application"
+  }))), /*#__PURE__*/React.createElement(Inp, {
     value: reqDesc,
     onChange: setReqDesc,
-    placeholder: reqType === "Time Off" ? "Reason (optional)" : "Describe what you're requesting",
+    placeholder: isDateType ? "Reason (optional)" : isLetterType ? "Any extra detail (optional)" : "Describe what you're requesting",
     style: {
       marginBottom: 10
     }
@@ -4936,7 +5059,7 @@ function MyInfoTab({
     style: {
       fontWeight: 700
     }
-  }, r.type, r.startDate ? " — " + r.startDate + (r.endDate && r.endDate !== r.startDate ? " to " + r.endDate : "") : ""), /*#__PURE__*/React.createElement(Badge, {
+  }, r.type, r.startDate ? " — " + r.startDate + (r.endDate && r.endDate !== r.startDate ? " to " + r.endDate : "") : "", r.letterFor ? " — for " + r.letterFor : ""), /*#__PURE__*/React.createElement(Badge, {
     small: true,
     color: REQ_COLORS[r.status]
   }, r.status)), r.description && /*#__PURE__*/React.createElement("div", {
@@ -4956,7 +5079,75 @@ function MyInfoTab({
       fontSize: 11,
       marginTop: 4
     }
-  }, "Submitted ", r.submittedDate))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Your Information"), /*#__PURE__*/React.createElement("div", {
+  }, "Submitted ", r.submittedDate))))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16,
+      background: "#FFEBEE",
+      border: "2px solid " + C.red
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Report a Workplace Concern"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      marginBottom: 10
+    }
+  }, "Harassment, discrimination, safety, unpaid or incorrect wages — anything like this. This isn't a request that gets approved or denied; your employer is required to look into it, and it's recorded here so there's a record for both of you."), /*#__PURE__*/React.createElement(Inp, {
+    value: concernDesc,
+    onChange: setConcernDesc,
+    placeholder: "Describe what's happening",
+    style: {
+      marginBottom: 10
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    onClick: submitConcern,
+    color: C.red,
+    style: {
+      width: "100%"
+    }
+  }, "Submit Concern"), myConcerns.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13,
+      marginBottom: 8
+    }
+  }, "Your Concerns"), myConcerns.map(r => /*#__PURE__*/React.createElement("div", {
+    key: r.id,
+    style: {
+      background: C.white,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 8,
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 700
+    }
+  }, "Submitted ", r.submittedDate), /*#__PURE__*/React.createElement(Badge, {
+    small: true,
+    color: r.status === "pending" ? C.orange : C.green
+  }, r.status === "pending" ? "Awaiting response" : "Being addressed")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.charcoal,
+      marginTop: 4
+    }
+  }, r.description), r.responseNote && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: C.charcoal,
+      marginTop: 4,
+      fontStyle: "italic"
+    }
+  }, "Employer note: ", r.responseNote))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Your Information"), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: C.charcoal,
@@ -5160,10 +5351,15 @@ function StaffTab({
   setRequests
 }) {
   const [staffView, setStaffView] = useState("directory");
+  const [expandedStaffId, setExpandedStaffId] = useState(null);
   const [respondingId, setRespondingId] = useState(null);
   const [responseNote, setResponseNote] = useState("");
-  const pendingRequests = requests.filter(r => r.status === "pending").sort((a, b) => a.submittedDate.localeCompare(b.submittedDate));
-  const resolvedRequests = requests.filter(r => r.status !== "pending").sort((a, b) => (b.resolvedDate || "").localeCompare(a.resolvedDate || ""));
+  const normalRequests = requests.filter(r => r.type !== "Workplace Concern");
+  const concernRequests = requests.filter(r => r.type === "Workplace Concern");
+  const pendingRequests = normalRequests.filter(r => r.status === "pending").sort((a, b) => a.submittedDate.localeCompare(b.submittedDate));
+  const resolvedRequests = normalRequests.filter(r => r.status !== "pending").sort((a, b) => (b.resolvedDate || "").localeCompare(a.resolvedDate || ""));
+  const pendingConcerns = concernRequests.filter(r => r.status === "pending").sort((a, b) => a.submittedDate.localeCompare(b.submittedDate));
+  const addressedConcerns = concernRequests.filter(r => r.status !== "pending").sort((a, b) => (b.resolvedDate || "").localeCompare(a.resolvedDate || ""));
   const respondToRequest = (id, status) => {
     setRequests(requests.map(r => r.id === id ? {
       ...r,
@@ -5173,6 +5369,53 @@ function StaffTab({
     } : r));
     setRespondingId(null);
     setResponseNote("");
+  };
+  const addressConcern = id => {
+    if (!responseNote.trim()) {
+      alert("Please note what action was taken before marking this addressed — it matters for your own records.");
+      return;
+    }
+    setRequests(requests.map(r => r.id === id ? {
+      ...r,
+      status: "approved",
+      responseNote: responseNote.trim(),
+      resolvedDate: today()
+    } : r));
+    setRespondingId(null);
+    setResponseNote("");
+  };
+  const LETTER_TYPES2 = ["Job Letter", "Reference Letter"];
+  const generateLetter = r => {
+    const emp = staff.find(x => x.id === r.staffId);
+    if (!emp) return;
+    const biz = settings.business || {};
+    const html = `<div style="font-family:Georgia,serif;max-width:600px;margin:40px auto;line-height:1.6">
+      <div style="font-weight:bold;font-size:16px">${biz.name || "Touch of Grace Kitchen Ltd."}</div>
+      <div style="font-size:12px">${biz.address || ""}</div>
+      <div style="font-size:12px;margin-bottom:20px">${biz.phone || ""}</div>
+      <div style="margin-bottom:20px">${today()}</div>
+      <div style="margin-bottom:20px">To: ${r.letterFor || "Whom It May Concern"}</div>
+      <p style="margin-bottom:16px">${r.type === "Reference Letter" ? "This letter is to confirm the employment history of " + emp.name + " at " + (biz.name || "our company") + "." : "This letter is to confirm that " + emp.name + " is currently employed with " + (biz.name || "our company") + "."}</p>
+      <p style="margin-bottom:16px">${emp.name} has ${r.type === "Reference Letter" ? "been" : "held the position of"} ${emp.role || "a staff member"}, employed since ${emp.startDate || "their start date on file"}, on a ${emp.employmentBasis || "regular"} basis.</p>
+      ${r.letterPurpose ? `<p style="margin-bottom:16px">This letter is provided for the purpose of: ${r.letterPurpose}.</p>` : ""}
+      <p style="margin-bottom:16px">Please contact us directly if any further verification is required.</p>
+      <p style="margin-top:40px">Sincerely,</p>
+      <p style="margin-top:40px">_______________________<br/>${biz.name || "Touch of Grace Kitchen Ltd."}</p>
+    </div>`;
+    let f = document.getElementById("letter-print-frame");
+    if (!f) {
+      f = document.createElement("iframe");
+      f.id = "letter-print-frame";
+      f.style.cssText = "position:fixed;top:-9999px;left:-9999px;width:700px;height:900px;border:none;";
+      document.body.appendChild(f);
+    }
+    f.contentDocument.open();
+    f.contentDocument.write("<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box}body{padding:20px}@media print{@page{margin:2cm}}</style></head><body>" + html + "</body></html>");
+    f.contentDocument.close();
+    setTimeout(() => {
+      f.contentWindow.focus();
+      f.contentWindow.print();
+    }, 400);
   };
   const REQ_COLORS2 = {
     pending: C.orange,
@@ -5956,7 +6199,163 @@ function StaffTab({
     onClick: () => setStaffView("requests"),
     color: staffView === "requests" ? C.orange : C.charcoal,
     outline: staffView !== "requests"
-  }, "Requests ", pendingRequests.length > 0 ? "(" + pendingRequests.length + ")" : "")), staffView === "requests" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+  }, "Requests ", pendingRequests.length > 0 ? "(" + pendingRequests.length + ")" : ""), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setStaffView("concerns"),
+    color: staffView === "concerns" ? C.red : C.charcoal,
+    outline: staffView !== "concerns"
+  }, "Concerns ", pendingConcerns.length > 0 ? "⚠️ (" + pendingConcerns.length + ")" : "")), staffView === "concerns" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#FFEBEE",
+      border: "1px solid " + C.red,
+      borderRadius: 8,
+      padding: 10,
+      marginBottom: 16,
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, "These come from your team's \"Report a Workplace Concern\" screen — harassment, discrimination, safety, unpaid wages. There's no \"deny\" option here; you're required to look into these, and noting what action you took matters if this is ever questioned later."), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: "hidden",
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 14px",
+      background: "#FFEBEE",
+      fontSize: 13,
+      fontWeight: 700,
+      color: C.red
+    }
+  }, "Awaiting Response (", pendingConcerns.length, ")"), pendingConcerns.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 20,
+      textAlign: "center",
+      color: C.gray,
+      fontSize: 13
+    }
+  }, "Nothing pending.") : pendingConcerns.map(r => {
+    const emp = staff.find(x => x.id === r.staffId);
+    return /*#__PURE__*/React.createElement("div", {
+      key: r.id,
+      style: {
+        padding: "12px 14px",
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 700
+      }
+    }, emp ? emp.name : "(removed)"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: C.gray
+      }
+    }, "Submitted ", r.submittedDate)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: C.charcoal,
+        marginTop: 6
+      }
+    }, r.description), respondingId === r.id ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10
+      }
+    }, /*#__PURE__*/React.createElement(Inp, {
+      value: responseNote,
+      onChange: setResponseNote,
+      placeholder: "What action was taken? (required)",
+      style: {
+        marginBottom: 8
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => addressConcern(r.id),
+      color: C.green
+    }, "Mark as Being Addressed"), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        setRespondingId(null);
+        setResponseNote("");
+      },
+      color: C.charcoal,
+      outline: true
+    }, "Cancel"))) : /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        setRespondingId(r.id);
+        setResponseNote("");
+      },
+      color: C.red,
+      style: {
+        marginTop: 8
+      }
+    }, "Respond"));
+  })), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 14px",
+      background: C.cream,
+      fontSize: 13,
+      fontWeight: 700
+    }
+  }, "Addressed"), addressedConcerns.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 20,
+      textAlign: "center",
+      color: C.gray,
+      fontSize: 13
+    }
+  }, "None yet.") : addressedConcerns.map(r => {
+    const emp = staff.find(x => x.id === r.staffId);
+    return /*#__PURE__*/React.createElement("div", {
+      key: r.id,
+      style: {
+        padding: "10px 14px",
+        borderBottom: "1px solid " + C.border,
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 600
+      }
+    }, emp ? emp.name : "(removed)"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: C.gray
+      }
+    }, r.resolvedDate)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.charcoal,
+        marginTop: 4
+      }
+    }, r.description), r.responseNote && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontStyle: "italic",
+        color: C.charcoal,
+        marginTop: 4
+      }
+    }, "Action taken: ", r.responseNote));
+  }))), staffView === "requests" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
     style: {
       padding: 0,
       overflow: "hidden",
@@ -5999,12 +6398,18 @@ function StaffTab({
         color: C.charcoal,
         marginLeft: 8
       }
-    }, r.type, r.startDate ? " — " + r.startDate + (r.endDate && r.endDate !== r.startDate ? " to " + r.endDate : "") : "")), /*#__PURE__*/React.createElement("span", {
+    }, r.type, r.startDate ? " — " + r.startDate + (r.endDate && r.endDate !== r.startDate ? " to " + r.endDate : "") : "", r.letterFor ? " — for " + r.letterFor : "")), /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 11,
         color: C.gray
       }
-    }, "Submitted ", r.submittedDate)), r.description && /*#__PURE__*/React.createElement("div", {
+    }, "Submitted ", r.submittedDate)), r.letterPurpose && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.charcoal,
+        marginTop: 4
+      }
+    }, "Purpose: ", r.letterPurpose), r.description && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 13,
         color: C.charcoal,
@@ -6107,7 +6512,15 @@ function StaffTab({
         marginTop: 4,
         fontStyle: "italic"
       }
-    }, r.responseNote));
+    }, r.responseNote), r.status === "approved" && LETTER_TYPES2.includes(r.type) && emp && /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => generateLetter(r),
+      color: C.blue,
+      outline: true,
+      style: {
+        marginTop: 8
+      }
+    }, "📄 Generate Letter"));
   }))), staffView === "schedule" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 16,
@@ -6411,90 +6824,153 @@ function StaffTab({
     style: {
       marginLeft: "auto"
     }
-  }, "+ Add Staff Member")), /*#__PURE__*/React.createElement("div", {
+  }, "+ Add Staff Member")), /*#__PURE__*/React.createElement(Card, {
     style: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: 14,
+      padding: 0,
+      overflow: "hidden",
       marginBottom: 20
     }
-  }, staff.map(s => {
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: C.green
+    }
+  }, ["", "Name", "Position", "Status", "Rate", payPeriod + " Gross", ""].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      color: C.white,
+      padding: "9px 12px",
+      textAlign: "left"
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, staff.map((s, i) => {
     const pos = getPos(s);
     const recent = (s.clockHistory || []).slice(-2).reverse();
     const periodPay = s.hourlyRate * s.hoursPerWeek * mult;
     const grantedPerms = PERMISSIONS.filter(p => pos.permissions && pos.permissions[p.key]);
-    return /*#__PURE__*/React.createElement(Card, {
-      key: s.id,
+    const isOpen = expandedStaffId === s.id;
+    return /*#__PURE__*/React.createElement(React.Fragment, {
+      key: s.id
+    }, /*#__PURE__*/React.createElement("tr", {
+      onClick: () => setExpandedStaffId(isOpen ? null : s.id),
       style: {
-        borderLeft: "4px solid " + (pos.color || C.charcoal)
+        background: isOpen ? C.lightGold : i % 2 === 0 ? C.white : C.cream,
+        borderBottom: "1px solid " + C.border,
+        borderLeft: "4px solid " + (pos.color || C.charcoal),
+        cursor: "pointer"
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "10px 12px",
+        color: C.gray
+      }
+    }, isOpen ? "▾" : "▸"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "10px 12px",
+        fontWeight: 700
+      }
+    }, s.name), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "10px 12px"
+      }
+    }, /*#__PURE__*/React.createElement(Badge, {
+      small: true,
+      color: pos.color || C.charcoal
+    }, pos.name)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "10px 12px"
+      }
+    }, s.clockedIn ? /*#__PURE__*/React.createElement(Badge, {
+      small: true,
+      color: C.green
+    }, "Clocked In") : /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.gray,
+        fontSize: 12
+      }
+    }, "Clocked Out")), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "10px 12px"
+      }
+    }, s.hourlyRate > 0 ? fmt(s.hourlyRate) + "/hr" : "N/A"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "10px 12px",
+        fontWeight: 700,
+        color: C.red
+      }
+    }, s.hourlyRate > 0 ? fmt(periodPay) : "--"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "10px 12px"
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: e => {
+        e.stopPropagation();
+        attemptClock(s.id);
+      },
+      color: s.clockedIn ? C.red : C.green
+    }, s.clockedIn ? "Clock Out" : "Clock In"))), isOpen && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 7,
+      style: {
+        padding: "14px 20px",
+        background: "#FAF6EC",
+        borderBottom: "2px solid " + C.gold
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "flex-start",
-        marginBottom: 8
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr 1fr 1fr",
+        gap: 14,
+        marginBottom: 12
       }
     }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
+        fontSize: 11,
+        color: C.charcoal
+      }
+    }, "Scheduled hrs"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700
+      }
+    }, s.hoursPerWeek * mult)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal
+      }
+    }, "Actual (clocked)"), /*#__PURE__*/React.createElement("div", {
+      style: {
         fontWeight: 700,
-        fontSize: 15
-      }
-    }, s.name), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        color: C.charcoal
-      }
-    }, s.role)), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "flex",
-        gap: 5,
-        alignItems: "center",
-        flexWrap: "wrap",
-        justifyContent: "flex-end"
-      }
-    }, /*#__PURE__*/React.createElement(Badge, {
-      color: pos.color || C.charcoal
-    }, pos.name), s.clockedIn && /*#__PURE__*/React.createElement(Badge, {
-      color: C.green
-    }, "In"))), /*#__PURE__*/React.createElement("div", {
-      style: {
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 6,
-        fontSize: 13,
-        marginBottom: 8
-      }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: C.charcoal
-      }
-    }, "Rate: "), /*#__PURE__*/React.createElement("strong", null, s.hourlyRate > 0 ? fmt(s.hourlyRate) + "/hr" : "N/A")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: C.charcoal
-      }
-    }, payPeriod, ": "), /*#__PURE__*/React.createElement("strong", {
-      style: {
-        color: C.red
-      }
-    }, s.hourlyRate > 0 ? fmt(periodPay) : "--")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: C.charcoal
-      }
-    }, "Scheduled hrs: "), /*#__PURE__*/React.createElement("strong", null, s.hoursPerWeek * mult)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
-      style: {
-        color: C.charcoal
-      }
-    }, "Actual (clocked): "), /*#__PURE__*/React.createElement("strong", {
-      style: {
         color: Math.abs(actualHoursThisPeriod(s) - s.hoursPerWeek * mult) > 4 ? C.orange : C.green
       }
-    }, actualHoursThisPeriod(s).toFixed(1)))), grantedPerms.length > 0 && /*#__PURE__*/React.createElement("div", {
+    }, actualHoursThisPeriod(s).toFixed(1))), s.type !== "Owner" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal
+      }
+    }, "Vacation (", (vacationRate(s) * 100).toFixed(0), "%)"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        color: C.teal
+      }
+    }, fmt(vacationBalance(s)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal
+      }
+    }, "Employment"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700
+      }
+    }, s.employmentBasis || "--"))), grantedPerms.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         flexWrap: "wrap",
         gap: 4,
-        marginBottom: 8
+        marginBottom: 12
       }
     }, grantedPerms.map(p => /*#__PURE__*/React.createElement(Badge, {
       key: p.key,
@@ -6502,43 +6978,42 @@ function StaffTab({
       color: pos.color || C.green
     }, p.label))), recent.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
-        background: C.cream,
+        background: C.white,
         borderRadius: 6,
-        padding: "6px 8px",
-        marginBottom: 8,
-        fontSize: 11
+        padding: "8px 10px",
+        marginBottom: 12,
+        fontSize: 12
       }
-    }, recent.map((r, i) => /*#__PURE__*/React.createElement("div", {
-      key: i,
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        marginBottom: 4
+      }
+    }, "Recent Clock History"), recent.map((r, ri) => /*#__PURE__*/React.createElement("div", {
+      key: ri,
       style: {
         color: C.charcoal
       }
-    }, r.date, " In:", r.clockIn, r.clockOut ? " Out:" + r.clockOut : " (active)"))), s.type !== "Owner" && /*#__PURE__*/React.createElement("div", {
+    }, r.date, " In:", r.clockIn, r.clockOut ? " Out:" + r.clockOut : " (active)"))), (s.address || s.contactNumber || s.nextOfKin || s.sin) && /*#__PURE__*/React.createElement("div", {
       style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        background: C.cream,
+        background: C.white,
         borderRadius: 6,
-        padding: "6px 10px",
-        marginBottom: 8,
+        padding: "8px 10px",
+        marginBottom: 12,
         fontSize: 12
       }
-    }, /*#__PURE__*/React.createElement("span", null, "Vacation balance (", (vacationRate(s) * 100).toFixed(0), "%)"), /*#__PURE__*/React.createElement("strong", {
+    }, /*#__PURE__*/React.createElement("div", {
       style: {
-        color: C.teal
+        fontWeight: 700,
+        marginBottom: 4
       }
-    }, fmt(vacationBalance(s)))), /*#__PURE__*/React.createElement("div", {
+    }, "Employee-provided info (via their own My Info)"), s.address && /*#__PURE__*/React.createElement("div", null, "Address: ", s.address), s.contactNumber && /*#__PURE__*/React.createElement("div", null, "Contact: ", s.contactNumber), s.nextOfKin && /*#__PURE__*/React.createElement("div", null, "Next of Kin: ", s.nextOfKin), s.sin && /*#__PURE__*/React.createElement("div", null, "SIN: •••• (on file)"), (s.td1Federal || s.td1BC) && /*#__PURE__*/React.createElement("div", null, "TD1: Federal $", s.td1Federal || "--", " / BC $", s.td1BC || "--", s.td1FiledDate ? " — filed " + s.td1FiledDate : "")), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         gap: 6,
         flexWrap: "wrap"
       }
-    }, /*#__PURE__*/React.createElement(Btn, {
-      small: true,
-      onClick: () => attemptClock(s.id),
-      color: s.clockedIn ? C.red : C.green
-    }, s.clockedIn ? "Clock Out" : "Clock In"), s.type !== "Owner" && /*#__PURE__*/React.createElement(Btn, {
+    }, s.type !== "Owner" && /*#__PURE__*/React.createElement(Btn, {
       small: true,
       onClick: () => {
         setVacStaffId(s.id);
@@ -6557,8 +7032,8 @@ function StaffTab({
       onClick: () => setStaff(staff.filter(x => x.id !== s.id)),
       color: C.red,
       outline: true
-    }, "Remove")));
-  })), /*#__PURE__*/React.createElement(Card, {
+    }, "Remove")))));
+  })))), /*#__PURE__*/React.createElement(Card, {
     style: {
       background: C.lightGold
     }
