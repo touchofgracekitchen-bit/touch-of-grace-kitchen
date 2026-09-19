@@ -18,6 +18,7 @@
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script crossorigin src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script>
     var SUPABASE_URL = 'https://ljnhokahxdevsxwpszds.supabase.co';
     var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxqbmhva2FoeGRldnN4d3BzemRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwMDA5MjgsImV4cCI6MjA5NTU3NjkyOH0.R-bxKsXiY7WiynjtKbx36BQhuaCT-8CB56ji7EtRdSw';
@@ -68,7 +69,7 @@ function usePersistedState(k, d) {
           } catch (e) {}
         }
       });
-    }, 30000);
+    }, 180000);
     return function () {
       clearInterval(t);
     };
@@ -127,7 +128,7 @@ function useSharedState(k, d) {
       dbLoad(k).then(function (r) {
         if (r != null) sv(r);
       });
-    }, 4000);
+    }, 20000);
     return function () {
       clearInterval(t);
       if (ch && db) {
@@ -11736,7 +11737,10 @@ function SettingsTab({
   proteins,
   setProteins,
   sides,
-  setSides
+  setSides,
+  salesRecent,
+  salesArchive,
+  archiveOldSales
 }) {
   const [section, setSection] = useState("business");
   const [newSupplier, setNewSupplier] = useState("");
@@ -11910,6 +11914,9 @@ function SettingsTab({
   }, {
     k: "projections",
     l: "Projections"
+  }, {
+    k: "datamgmt",
+    l: "Data & Sync"
   }];
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -12317,7 +12324,127 @@ function SettingsTab({
     }),
     color: C.red,
     outline: true
-  }, "Remove"))))), section === "suppliers" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Suppliers"), /*#__PURE__*/React.createElement("div", {
+  }, "Remove"))))), section === "datamgmt" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Data & Sync"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      borderRadius: 8,
+      padding: 12,
+      marginBottom: 16,
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, "Sales are split into two buckets: a small \"recent\" one that syncs live across every tablet the moment a sale happens, and an \"archive\" for anything older, which loads once rather than being re-sent constantly. This keeps Supabase bandwidth (egress) low even as your sales history grows — it never affects Reports, End of Day, or anything else, since those always see your complete history either way."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 12,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.cream,
+      borderRadius: 8,
+      padding: 14,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal
+    }
+  }, "Recent (syncs live)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 22,
+      color: C.teal
+    }
+  }, salesRecent.length), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.gray
+    }
+  }, "sales")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.cream,
+      borderRadius: 8,
+      padding: 14,
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal
+    }
+  }, "Archived (loads once)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 800,
+      fontSize: 22,
+      color: C.charcoal
+    }
+  }, salesArchive.length), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.gray
+    }
+  }, "sales"))), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => {
+      const moved = archiveOldSales(30);
+      alert(moved > 0 ? "Moved " + moved + " sale(s) older than 30 days into the archive." : "Nothing older than 30 days to archive right now.");
+    },
+    color: C.blue
+  }, "Archive Sales Older Than 30 Days"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.gray,
+      marginTop: 8,
+      marginBottom: 16
+    }
+  }, "Safe to run any time — this only changes how the data is stored and synced, never what it says. Nothing is deleted."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: "1px solid " + C.border,
+      paddingTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 14,
+      marginBottom: 6
+    }
+  }, "Download a Permanent Backup"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      marginBottom: 10
+    }
+  }, "Every sale, ever — one row each, as an Excel file you can keep forever at zero cost. Worth doing regularly regardless of archiving, and CRA generally expects business records kept for 6 years."), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => {
+      if (typeof XLSX === "undefined") {
+        alert("Export library didn't load — check your internet connection and try again.");
+        return;
+      }
+      const allSales = [...salesArchive, ...salesRecent].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+      const rows = allSales.map(s => ({
+        Date: s.date,
+        Time: s.time,
+        "Order #": s.orderNumber,
+        Items: (s.items || []).map(i => i.qty + "x " + i.name + (i.customization ? " (" + i.customization + ")" : "")).join("; "),
+        Subtotal: s.subtotal || 0,
+        Discount: s.discountAmt || 0,
+        GST: s.gst || 0,
+        PST: s.pst || 0,
+        Total: s.total || 0,
+        "Payment Method": s.payMethod || "",
+        "Payment Status": s.paymentStatus || "",
+        "Order Type": s.orderType || "",
+        Note: s.note || ""
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Sales");
+      XLSX.writeFile(wb, "touch-of-grace-sales-backup-" + today() + ".xlsx");
+    },
+    color: C.green
+  }, "📥 Download All Sales as Excel"))), section === "suppliers" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Suppliers"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 10,
@@ -14567,7 +14694,37 @@ function App() {
   const [tab, setTab] = useState("pos");
   const [settings, setSettings, sLoaded] = usePersistedState("tog-settings", DEFAULT_SETTINGS);
   const [menu, setMenu, mLoaded] = usePersistedState("tog-menu", MENU_INIT);
-  const [sales, setSales, salLoaded] = useSharedState("tog-sales", []);
+  // Sales are split into two buckets to control Supabase egress:
+  // "recent" is small and syncs fast/live across devices (needed for the
+  // kitchen and register to see each other's activity instantly).
+  // "archive" holds everything older and syncs on the slow channel, since
+  // historical sales never change and don't need to be re-sent live.
+  // sales/setSales below behave exactly like a single array to every
+  // other part of the app — nothing downstream needs to know about the
+  // split at all.
+  const [salesRecent, setSalesRecent, salRecLoaded] = useSharedState("tog-sales", []);
+  const [salesArchive, setSalesArchive, salArcLoaded] = usePersistedState("tog-sales-archive", []);
+  const sales = [...salesArchive, ...salesRecent];
+  const salLoaded = salRecLoaded && salArcLoaded;
+  const setSales = updater => {
+    const nextFull = typeof updater === "function" ? updater(sales) : updater;
+    const archiveIds = new Set(salesArchive.map(s => s.id));
+    setSalesArchive(nextFull.filter(s => archiveIds.has(s.id)));
+    setSalesRecent(nextFull.filter(s => !archiveIds.has(s.id)));
+  };
+  // Moves anything older than the cutoff out of the fast/live bucket and
+  // into the slow archive — a deliberate, one-click action, never
+  // automatic, so it only ever runs when the app is fully loaded and
+  // working normally.
+  const archiveOldSales = daysToKeep => {
+    const cutoff = new Date(Date.now() - daysToKeep * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const toArchive = salesRecent.filter(s => s.date < cutoff);
+    const toKeep = salesRecent.filter(s => s.date >= cutoff);
+    if (toArchive.length === 0) return 0;
+    setSalesArchive([...salesArchive, ...toArchive]);
+    setSalesRecent(toKeep);
+    return toArchive.length;
+  };
   const [expenses, setExpenses, expLoaded] = usePersistedState("tog-expenses", EXPENSES_INIT);
   const [accounts, setAccounts, accLoaded] = usePersistedState("tog-accounts", ACCOUNTS_INIT);
   const [inventory, setInventory, invLoaded] = usePersistedState("tog-inventory", INVENTORY_INIT);
@@ -15144,7 +15301,10 @@ function App() {
     proteins: proteins,
     setProteins: setProteins,
     sides: sides,
-    setSides: setSides
+    setSides: setSides,
+    salesRecent: salesRecent,
+    salesArchive: salesArchive,
+    archiveOldSales: archiveOldSales
   })));
 }
 try {
