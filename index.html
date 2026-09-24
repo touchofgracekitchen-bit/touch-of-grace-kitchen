@@ -1960,6 +1960,9 @@ function POSTab({
 }) {
   const [order, setOrder] = useState([]);
   const [note, setNote] = useState("");
+  const [isScheduled, setIsScheduled] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
   const [orderType, setOrderType] = useState("Dine-in");
   const [payMethod, setPayMethod] = useState("Card Machine");
   const [cashGiven, setCashGiven] = useState("");
@@ -2080,11 +2083,22 @@ function POSTab({
       discount,
       note
     };
-    setKitchenOrders(prev => [...(prev || []), {
-      ...sale,
-      status: "new",
-      placedAt: now
-    }]);
+    if (isScheduled && scheduleDate) {
+      const pickupNote = "Scheduled pickup" + (scheduleTime ? " at " + scheduleTime : "") + (note ? " — " + note : "");
+      setKitchenOrders(prev => [...(prev || []), {
+        ...sale,
+        status: "scheduled",
+        releaseDate: scheduleDate,
+        placedAt: now,
+        note: pickupNote
+      }]);
+    } else {
+      setKitchenOrders(prev => [...(prev || []), {
+        ...sale,
+        status: "new",
+        placedAt: now
+      }]);
+    }
     onSaleComplete(sale);
     setReceipt(sale);
     setOrder([]);
@@ -2096,6 +2110,9 @@ function POSTab({
     setDiscountItemIdx("");
     setIsComp(false);
     setCompAuth(null);
+    setIsScheduled(false);
+    setScheduleDate("");
+    setScheduleTime("");
   };
   const activeAccounts = accounts.filter(a => a.active);
   if (receipt) {
@@ -2526,7 +2543,62 @@ function POSTab({
     value: note,
     onChange: setNote,
     placeholder: "Order note (optional)"
-  }), !isComp && /*#__PURE__*/React.createElement("div", null, !showDiscount ? /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 8
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      fontSize: 13,
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: isScheduled,
+    onChange: e => {
+      setIsScheduled(e.target.checked);
+      if (e.target.checked && !scheduleDate) {
+        const t = new Date();
+        t.setDate(t.getDate() + 1);
+        setScheduleDate(t.toISOString().slice(0, 10));
+      }
+    }
+  }), "Schedule for a future pickup (won't appear in Kitchen until that morning)"), isScheduled && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 8,
+      marginTop: 8,
+      background: C.lightGold,
+      borderRadius: 8,
+      padding: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Pickup Date"), /*#__PURE__*/React.createElement(Inp, {
+    type: "date",
+    value: scheduleDate,
+    onChange: setScheduleDate
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Pickup Time"), /*#__PURE__*/React.createElement(Inp, {
+    type: "time",
+    value: scheduleTime,
+    onChange: setScheduleTime
+  })))), !isComp && /*#__PURE__*/React.createElement("div", null, !showDiscount ? /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       gap: 6
@@ -2773,12 +2845,14 @@ function POSTab({
 // -- KITCHEN TAB --------------------------------------------------------------
 const K_COLORS = {
   new: C.red,
+  scheduled: C.red,
   cooking: C.orange,
   ready: C.green,
   collected: "#9E9E9E"
 };
 const K_LABELS = {
   new: "NEW",
+  scheduled: "NEW",
   cooking: "COOKING",
   ready: "READY",
   collected: "COLLECTED"
@@ -2841,12 +2915,24 @@ function KitchenTab({
     setKitchenOrders(next);
   };
   const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
-  const orders = kitchenOrders || [];
+  const allOrders = kitchenOrders || [];
   const recentEnough = o => Date.now() - (o.placedAt || 0) < THREE_DAYS_MS;
+
+  // A scheduled pre-order stays completely invisible to the kitchen until
+  // its pickup date actually arrives — it doesn't count toward Active,
+  // doesn't show in either column, nothing. The moment its date arrives,
+  // it behaves exactly like a normal new order automatically, with no
+  // button to press and nothing written until staff actually act on it.
+  const notYetDue = o => o.status === "scheduled" && o.releaseDate > today();
+  const orders = allOrders.filter(o => !notYetDue(o));
+  const scheduledOrders = allOrders.filter(notYetDue).sort((a, b) => (a.releaseDate + (a.note || "")).localeCompare(b.releaseDate + (b.note || "")));
+  const cancelScheduled = id => {
+    if (window.confirm("Cancel this scheduled pickup? This only removes it from the kitchen queue — if it was already paid, handle any refund separately in EOD.")) setKitchenOrders(allOrders.filter(o => o.id !== id));
+  };
   const [clearResult, setClearResult] = useState(null);
   const clearOldCollected = () => {
-    const before = orders.length;
-    const kept = orders.filter(o => o.status !== "collected" || recentEnough(o));
+    const before = allOrders.length;
+    const kept = allOrders.filter(o => o.status !== "collected" || recentEnough(o));
     setKitchenOrders(kept);
     setClearResult(before - kept.length);
   };
@@ -2854,7 +2940,7 @@ function KitchenTab({
   const sorted = [...visible].sort((a, b) => a.placedAt - b.placedAt);
   const accountsOrders = sorted.filter(o => o.orderSource === "accounts");
   const posOrders = sorted.filter(o => o.orderSource !== "accounts");
-  const newCount = orders.filter(o => o.status === "new").length;
+  const newCount = orders.filter(o => o.status === "new" || o.status === "scheduled").length;
   const cookingCount = orders.filter(o => o.status === "cooking").length;
   const readyCount = orders.filter(o => o.status === "ready").length;
   const oldCollectedCount = orders.filter(o => o.status === "collected" && !recentEnough(o)).length;
@@ -3046,7 +3132,11 @@ function KitchenTab({
     onClick: () => setFilter("done"),
     color: filter === "done" ? C.charcoal : C.charcoal,
     outline: filter !== "done"
-  }, "Collected, last 3 days (", orders.filter(o => o.status === "collected" && recentEnough(o)).length, ")"), filter === "done" && oldCollectedCount > 0 && /*#__PURE__*/React.createElement("div", {
+  }, "Collected, last 3 days (", orders.filter(o => o.status === "collected" && recentEnough(o)).length, ")"), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setFilter("scheduled"),
+    color: filter === "scheduled" ? C.purple : C.charcoal,
+    outline: filter !== "scheduled"
+  }, "Scheduled Pickups (", scheduledOrders.length, ")"), filter === "done" && oldCollectedCount > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       marginLeft: "auto",
       display: "flex",
@@ -3074,7 +3164,55 @@ function KitchenTab({
       fontSize: 13,
       color: C.green
     }
-  }, "Removed ", clearResult, " old collected order(s) from this screen. Your sales records are untouched."), sorted.length === 0 && /*#__PURE__*/React.createElement(Card, {
+  }, "Removed ", clearResult, " old collected order(s) from this screen. Your sales records are untouched."), filter === "scheduled" ? /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 14px",
+      background: C.lightGold,
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, "These are paid and confirmed, but stay completely out of the kitchen's view until their pickup date arrives — nothing to do here until then."), scheduledOrders.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 30,
+      textAlign: "center",
+      color: C.gray
+    }
+  }, "No upcoming scheduled pickups.") : scheduledOrders.map(o => /*#__PURE__*/React.createElement("div", {
+    key: o.id,
+    style: {
+      padding: "12px 14px",
+      borderBottom: "1px solid " + C.border,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700
+    }
+  }, "#", o.orderNumber, " — Pickup ", o.releaseDate), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      marginTop: 2
+    }
+  }, o.items.map(x => x.qty + "x " + x.name).join(", ")), o.note && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.purple,
+      marginTop: 2
+    }
+  }, o.note)), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => cancelScheduled(o.id),
+    color: C.red,
+    outline: true
+  }, "Cancel")))) : /*#__PURE__*/React.createElement(React.Fragment, null, sorted.length === 0 && /*#__PURE__*/React.createElement(Card, {
     style: {
       textAlign: "center",
       padding: 60
@@ -3134,7 +3272,7 @@ function KitchenTab({
       textAlign: "center",
       padding: 20
     }
-  }, "None right now") : posOrders.map(renderCard))));
+  }, "None right now") : posOrders.map(renderCard)))));
 }
 
 // -- INVENTORY TAB
@@ -3175,6 +3313,103 @@ function InventoryTab({
   const [countLocked, setCountLocked] = useState(false);
   // countLog moved to App level
   const [receiveLog, setReceiveLog, rcvLoaded] = usePersistedState("tog-receive-log", []);
+  const [sourcingNotes, setSourcingNotes, srcLoaded] = usePersistedState("tog-sourcing-notes", []);
+  const [purchaseList, setPurchaseList, plLoaded] = usePersistedState("tog-purchase-list", []);
+  const REASONS = ["Better Quality", "Lower Price", "Better Service", "Testing", "Other"];
+  const [srcForm, setSrcForm] = useState({
+    invId: "",
+    supplier: "",
+    active: true,
+    reason: REASONS[0],
+    note: ""
+  });
+  const [plForm, setPlForm] = useState({
+    invId: "",
+    supplier: "",
+    qty: "",
+    note: ""
+  });
+  const [receivingPlId, setReceivingPlId] = useState(null);
+  const [receivingQty, setReceivingQty] = useState("");
+  const [receivingPrice, setReceivingPrice] = useState("");
+  const addSourcingNote = () => {
+    if (!srcForm.invId || !srcForm.supplier.trim()) return;
+    setSourcingNotes([...sourcingNotes, {
+      id: Date.now(),
+      ...srcForm,
+      invId: parseInt(srcForm.invId),
+      supplier: srcForm.supplier.trim()
+    }]);
+    setSrcForm({
+      invId: "",
+      supplier: "",
+      active: true,
+      reason: REASONS[0],
+      note: ""
+    });
+  };
+  const removeSourcingNote = id => setSourcingNotes(sourcingNotes.filter(s => s.id !== id));
+  const addToPurchaseList = () => {
+    if (!plForm.invId || !plForm.qty) return;
+    setPurchaseList([...purchaseList, {
+      id: Date.now(),
+      ...plForm,
+      invId: parseInt(plForm.invId),
+      qty: parseFloat(plForm.qty)
+    }]);
+    setPlForm({
+      invId: "",
+      supplier: "",
+      qty: "",
+      note: ""
+    });
+  };
+  const removeFromPurchaseList = id => setPurchaseList(purchaseList.filter(p => p.id !== id));
+
+  // Confirming a purchase-list item as received uses the exact same
+  // weighted-average cost math as the regular "+ Receive" button — it's
+  // the same real action, just started from a different screen.
+  const confirmReceivedFromList = plItem => {
+    const qty = parseFloat(receivingQty),
+      price = parseFloat(receivingPrice);
+    if (isNaN(qty) || qty <= 0 || isNaN(price) || price <= 0) return;
+    const item = inventory.find(i => i.id === plItem.invId);
+    if (!item) return;
+    const oldStock = item.stock || 0,
+      oldCost = item.avgCost || price;
+    const newAvg = (oldStock * oldCost + qty * price) / (oldStock + qty);
+    setInventory(inventory.map(i => {
+      if (i.id !== item.id) return i;
+      const newPrices = {
+        ...(i.prices || {})
+      };
+      if (plItem.supplier) newPrices[plItem.supplier] = price;
+      return {
+        ...i,
+        stock: oldStock + qty,
+        avgCost: parseFloat(newAvg.toFixed(4)),
+        prices: newPrices
+      };
+    }));
+    setReceiveLog(prev => [...prev, {
+      id: Date.now(),
+      date: today(),
+      time: nowStr(),
+      itemId: item.id,
+      itemName: item.name,
+      qty,
+      price,
+      supplier: plItem.supplier,
+      prevStock: oldStock,
+      newStock: oldStock + qty,
+      prevAvgCost: oldCost,
+      newAvgCost: newAvg
+    }]);
+    setPurchaseList(purchaseList.filter(p => p.id !== plItem.id));
+    setReceivingPlId(null);
+    setReceivingQty("");
+    setReceivingPrice("");
+  };
   const [receiveMode, setReceiveMode] = useState(false);
   const [receiveForm, setReceiveForm] = useState({
     itemId: null,
@@ -3472,7 +3707,7 @@ function InventoryTab({
       gap: 8,
       marginBottom: 18
     }
-  }, [["stock", "Stock Levels"], ["count", "Stock Count"], ["received", "Receiving History"]].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["stock", "Stock Levels"], ["count", "Stock Count"], ["received", "Receiving History"], ["sourcing", "Sourcing & Purchase List"]].map(([k, l]) => /*#__PURE__*/React.createElement("button", {
     key: k,
     onClick: () => setSection(k),
     style: {
@@ -4163,7 +4398,410 @@ function InventoryTab({
     style: {
       padding: "8px 12px"
     }
-  }, fmt(r.newAvgCost)))))))), receiveMode && /*#__PURE__*/React.createElement("div", {
+  }, fmt(r.newAvgCost))))))), section === "sourcing" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16,
+      background: C.lightGold,
+      border: "2px solid " + C.gold
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Where We Get What, and Why"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      marginBottom: 12
+    }
+  }, "A running reference for you and your sister — which supplier an item comes from, and the reason, so the \"why\" doesn't get lost over time. Mark one inactive if you've decided to stop buying from a place, with the reason noted."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1.3fr 1fr 1fr 1.3fr auto",
+      gap: 8,
+      alignItems: "end",
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Item"), /*#__PURE__*/React.createElement("select", {
+    value: srcForm.invId,
+    onChange: e => setSrcForm({
+      ...srcForm,
+      invId: e.target.value
+    }),
+    style: {
+      width: "100%",
+      padding: "8px 10px",
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      fontSize: 13,
+      background: C.white,
+      fontFamily: "inherit"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "-- Select item --"), inventory.map(i => /*#__PURE__*/React.createElement("option", {
+    key: i.id,
+    value: i.id
+  }, i.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Supplier"), /*#__PURE__*/React.createElement(Inp, {
+    value: srcForm.supplier,
+    onChange: v => setSrcForm({
+      ...srcForm,
+      supplier: v
+    }),
+    placeholder: "Supplier name"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Reason"), /*#__PURE__*/React.createElement(Sel, {
+    value: srcForm.reason,
+    onChange: v => setSrcForm({
+      ...srcForm,
+      reason: v
+    }),
+    options: REASONS
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Note (optional)"), /*#__PURE__*/React.createElement(Inp, {
+    value: srcForm.note,
+    onChange: v => setSrcForm({
+      ...srcForm,
+      note: v
+    }),
+    placeholder: "Any extra detail"
+  })), /*#__PURE__*/React.createElement(Btn, {
+    onClick: addSourcingNote
+  }, "+ Add")), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: srcForm.active,
+    onChange: e => setSrcForm({
+      ...srcForm,
+      active: e.target.checked
+    })
+  }), " Currently buying from here (uncheck if this is a \"stopped buying\" note)")), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: "hidden",
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 14px",
+      background: C.cream,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13
+    }
+  }, "Sourcing Notes"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => window.print(),
+    color: C.blue,
+    outline: true
+  }, "Print")), /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: C.green
+    }
+  }, ["Item", "Supplier", "Status", "Reason", "Note", ""].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      color: C.white,
+      padding: "8px 12px",
+      textAlign: "left",
+      fontSize: 12
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, sourcingNotes.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: 6,
+    style: {
+      padding: 20,
+      textAlign: "center",
+      color: C.gray
+    }
+  }, "No sourcing notes yet.")) : sourcingNotes.map((s, i) => {
+    const item = inventory.find(x => x.id === s.invId);
+    return /*#__PURE__*/React.createElement("tr", {
+      key: s.id,
+      style: {
+        background: i % 2 === 0 ? C.white : C.cream,
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        fontWeight: 600
+      }
+    }, item ? item.name : "(removed item)"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, s.supplier), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, s.active ? /*#__PURE__*/React.createElement(Badge, {
+      small: true,
+      color: C.green
+    }, "Current") : /*#__PURE__*/React.createElement(Badge, {
+      small: true,
+      color: C.red
+    }, "Stopped")), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, s.reason), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        fontSize: 12,
+        color: C.charcoal
+      }
+    }, s.note || "--"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px"
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => removeSourcingNote(s.id),
+      color: C.red,
+      outline: true
+    }, "Remove")));
+  })))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      marginBottom: 16,
+      background: "#E3F2FD",
+      border: "2px solid " + C.blue
+    }
+  }, /*#__PURE__*/React.createElement(SH, null, "Add to Purchase List"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1.3fr 1fr 0.8fr 1.3fr auto",
+      gap: 8,
+      alignItems: "end"
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Item"), /*#__PURE__*/React.createElement("select", {
+    value: plForm.invId,
+    onChange: e => setPlForm({
+      ...plForm,
+      invId: e.target.value
+    }),
+    style: {
+      width: "100%",
+      padding: "8px 10px",
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      fontSize: 13,
+      background: C.white,
+      fontFamily: "inherit"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "-- Select item --"), inventory.map(i => /*#__PURE__*/React.createElement("option", {
+    key: i.id,
+    value: i.id
+  }, i.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Supplier"), /*#__PURE__*/React.createElement(Inp, {
+    value: plForm.supplier,
+    onChange: v => setPlForm({
+      ...plForm,
+      supplier: v
+    }),
+    placeholder: "Supplier name"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Qty Needed"), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: plForm.qty,
+    onChange: v => setPlForm({
+      ...plForm,
+      qty: v
+    }),
+    placeholder: "0"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Note (optional)"), /*#__PURE__*/React.createElement(Inp, {
+    value: plForm.note,
+    onChange: v => setPlForm({
+      ...plForm,
+      note: v
+    }),
+    placeholder: "e.g. ask for case pricing"
+  })), /*#__PURE__*/React.createElement(Btn, {
+    onClick: addToPurchaseList
+  }, "+ Add"))), /*#__PURE__*/React.createElement(Card, {
+    style: {
+      padding: 0,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 14px",
+      background: C.cream,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 700,
+      fontSize: 13
+    }
+  }, "Purchase List (", purchaseList.length, ")"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => window.print(),
+    color: C.blue,
+    outline: true
+  }, "Print")), purchaseList.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 20,
+      textAlign: "center",
+      color: C.gray
+    }
+  }, "Nothing on the purchase list right now.") : purchaseList.map(p => {
+    const item = inventory.find(x => x.id === p.invId);
+    return /*#__PURE__*/React.createElement("div", {
+      key: p.id,
+      style: {
+        padding: "12px 14px",
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 700
+      }
+    }, item ? item.name : "(removed item)"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.charcoal,
+        marginLeft: 8
+      }
+    }, p.qty, " ", item ? item.unit : "", " from ", p.supplier || "(supplier not set)"), p.note && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.gray,
+        marginTop: 2
+      }
+    }, p.note)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => {
+        setReceivingPlId(p.id);
+        setReceivingQty(String(p.qty));
+        setReceivingPrice("");
+      },
+      color: C.green
+    }, "Mark Received"), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => removeFromPurchaseList(p.id),
+      color: C.red,
+      outline: true
+    }, "Remove"))), receivingPlId === p.id && /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginTop: 10,
+        background: C.lightGold,
+        borderRadius: 8,
+        padding: 10,
+        display: "flex",
+        gap: 8,
+        alignItems: "end"
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 3
+      }
+    }, "Qty Received"), /*#__PURE__*/React.createElement(Inp, {
+      type: "number",
+      value: receivingQty,
+      onChange: setReceivingQty
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 3
+      }
+    }, "Price Paid (per unit)"), /*#__PURE__*/React.createElement(Inp, {
+      type: "number",
+      value: receivingPrice,
+      onChange: setReceivingPrice
+    })), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => confirmReceivedFromList(p)
+    }, "Confirm — Add to Stock"), /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => setReceivingPlId(null),
+      color: C.charcoal,
+      outline: true
+    }, "Cancel")));
+  })))), receiveMode && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
@@ -7181,6 +7819,7 @@ function AccountsTab({
     from: today().slice(0, 7) + "-01",
     to: today()
   });
+  const [invoiceSelectedIds, setInvoiceSelectedIds] = useState([]);
   const [form, setForm] = useState({
     name: "",
     contact: "",
@@ -7193,6 +7832,9 @@ function AccountsTab({
   const [acOrder, setAcOrder] = useState([]);
   const [acOrderCat, setAcOrderCat] = useState("All");
   const [acOrderNote, setAcOrderNote] = useState("");
+  const [acIsScheduled, setAcIsScheduled] = useState(false);
+  const [acScheduleDate, setAcScheduleDate] = useState("");
+  const [acScheduleTime, setAcScheduleTime] = useState("");
   const [acShowDiscount, setAcShowDiscount] = useState(false);
   const [acDiscountType, setAcDiscountType] = useState("percent");
   const [acDiscountValue, setAcDiscountValue] = useState("");
@@ -7260,7 +7902,11 @@ function AccountsTab({
   const acc = selected ? accounts.find(a => a.id === selected) : null;
   const accOrders = acc ? onAccountOrders(acc) : [];
   const totalPaid = acc ? totalPayments(acc) : 0;
-  const invoiceOrders = acc ? accOrders.filter(s => s.date >= invoiceRange.from && s.date <= invoiceRange.to) : [];
+  // Every order on the account, paid or not — an invoice is just as valid
+  // for something already settled as for something still owing.
+  const allAccOrders = acc ? [...onAccountOrders(acc), ...settledOrders(acc)] : [];
+  const invoiceRangeOrders = allAccOrders.filter(s => (s.settledDate || s.date) >= invoiceRange.from && (s.settledDate || s.date) <= invoiceRange.to);
+  const invoiceOrders = invoiceRangeOrders.filter(o => invoiceSelectedIds.includes(o.id));
   const invoiceTotal = invoiceOrders.reduce((s, o) => s + o.total, 0);
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -7508,10 +8154,6 @@ function AccountsTab({
     onClick: () => setView("new-order"),
     color: view === "new-order" ? C.green : C.charcoal
   }, "+ Place Order"), /*#__PURE__*/React.createElement(Btn, {
-    onClick: () => setView("orders"),
-    color: view === "orders" ? C.green : C.charcoal,
-    outline: view !== "orders"
-  }, "Order History"), /*#__PURE__*/React.createElement(Btn, {
     onClick: () => setView("payment"),
     color: view === "payment" ? C.gold : C.charcoal,
     outline: view !== "payment"
@@ -7612,16 +8254,30 @@ function AccountsTab({
       };
       onSaleComplete(sale);
       if (setKitchenOrders) {
-        const kitchenNote = "Phone order - " + acc.name + (customerNote ? " | " + customerNote : "");
-        setKitchenOrders(prev => [...(prev || []), {
-          ...sale,
-          status: "new",
-          placedAt: Date.now(),
-          note: kitchenNote
-        }]);
+        const baseNote = "Phone order - " + acc.name + (customerNote ? " | " + customerNote : "");
+        if (acIsScheduled && acScheduleDate) {
+          const pickupNote = baseNote + " | Scheduled pickup" + (acScheduleTime ? " at " + acScheduleTime : "");
+          setKitchenOrders(prev => [...(prev || []), {
+            ...sale,
+            status: "scheduled",
+            releaseDate: acScheduleDate,
+            placedAt: Date.now(),
+            note: pickupNote
+          }]);
+        } else {
+          setKitchenOrders(prev => [...(prev || []), {
+            ...sale,
+            status: "new",
+            placedAt: Date.now(),
+            note: baseNote
+          }]);
+        }
       }
       setAcOrder([]);
       setAcOrderNote("");
+      setAcIsScheduled(false);
+      setAcScheduleDate("");
+      setAcScheduleTime("");
       setAcShowDiscount(false);
       setAcDiscountValue("");
       setAcIsComp(false);
@@ -7740,7 +8396,62 @@ function AccountsTab({
       style: {
         marginBottom: 12
       }
-    })), !acIsComp && /*#__PURE__*/React.createElement("div", {
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 12
+      }
+    }, /*#__PURE__*/React.createElement("label", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        fontSize: 13,
+        cursor: "pointer"
+      }
+    }, /*#__PURE__*/React.createElement("input", {
+      type: "checkbox",
+      checked: acIsScheduled,
+      onChange: e => {
+        setAcIsScheduled(e.target.checked);
+        if (e.target.checked && !acScheduleDate) {
+          const t = new Date();
+          t.setDate(t.getDate() + 1);
+          setAcScheduleDate(t.toISOString().slice(0, 10));
+        }
+      }
+    }), "Schedule for a future pickup (won't appear in Kitchen until that morning)"), acIsScheduled && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 8,
+        marginTop: 8,
+        background: C.lightGold,
+        borderRadius: 8,
+        padding: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 3
+      }
+    }, "Pickup Date"), /*#__PURE__*/React.createElement(Inp, {
+      type: "date",
+      value: acScheduleDate,
+      onChange: setAcScheduleDate
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 3
+      }
+    }, "Pickup Time"), /*#__PURE__*/React.createElement(Inp, {
+      type: "time",
+      value: acScheduleTime,
+      onChange: setAcScheduleTime
+    }))))), !acIsComp && /*#__PURE__*/React.createElement("div", {
       style: {
         marginBottom: 10
       }
@@ -7861,86 +8572,7 @@ function AccountsTab({
       },
       onCancel: () => setAcPinGate(false)
     }))));
-  })(), view === "orders" && /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 0,
-      overflow: "hidden"
-    }
-  }, /*#__PURE__*/React.createElement("table", {
-    style: {
-      width: "100%",
-      borderCollapse: "collapse",
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
-    style: {
-      background: C.green
-    }
-  }, ["Date", "Time", "Order #", "Items", "Total", "Status", ""].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: {
-      color: C.white,
-      padding: "9px 14px",
-      textAlign: "left",
-      fontSize: 12
-    }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, accOrders.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 7,
-    style: {
-      padding: 20,
-      textAlign: "center",
-      color: C.gray
-    }
-  }, "No unpaid orders on this account. Place an order in POS and select \"On Account\", or use \"+ Place Order\" above.")) : accOrders.sort((a, b) => b.date.localeCompare(a.date)).map((o, i) => /*#__PURE__*/React.createElement("tr", {
-    key: o.id,
-    style: {
-      background: i % 2 === 0 ? C.white : C.cream,
-      borderBottom: "1px solid " + C.border
-    }
-  }, /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 14px"
-    }
-  }, o.date), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 14px",
-      color: C.charcoal
-    }
-  }, o.time), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 14px",
-      fontWeight: 700
-    }
-  }, "#", o.orderNumber), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 14px",
-      fontSize: 12
-    }
-  }, o.items.map(i => i.qty + "x " + i.name).join(", ")), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 14px",
-      fontWeight: 700,
-      color: C.red
-    }
-  }, fmt(o.total)), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 14px"
-    }
-  }, /*#__PURE__*/React.createElement(Badge, {
-    color: C.orange
-  }, "Pending")), /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 14px"
-    }
-  }, /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => {
-      if (!window.confirm("Cancel order #" + o.orderNumber + " for " + fmt(o.total) + "? Use this only if the order was placed by mistake — not to remove a real charge. To settle a real order, use \"Record Payment\" instead.")) return;
-      setSales(prevSales => prevSales.filter(s => s.id !== o.id));
-    },
-    color: C.red,
-    outline: true
-  }, "Cancel"))))))), view === "payment" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Settle Orders for ", acc.name), /*#__PURE__*/React.createElement("div", {
+  })(), view === "payment" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Settle Orders for ", acc.name), /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#E8F5E9",
       borderRadius: 8,
@@ -7976,7 +8608,7 @@ function AccountsTab({
     style: {
       background: C.green
     }
-  }, ["", "Date", "Order #", "Items", "Total"].map(h => /*#__PURE__*/React.createElement("th", {
+  }, ["", "Date", "Order #", "Items", "Total", ""].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: {
       color: C.white,
@@ -7988,14 +8620,14 @@ function AccountsTab({
     key: o.id,
     style: {
       background: selOrderIds.includes(o.id) ? C.lightGold : i % 2 === 0 ? C.white : C.cream,
-      borderBottom: "1px solid " + C.border,
+      borderBottom: "1px solid " + C.border
+    }
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px",
       cursor: "pointer"
     },
     onClick: () => setSelOrderIds(prev => prev.includes(o.id) ? prev.filter(id => id !== o.id) : [...prev, o.id])
-  }, /*#__PURE__*/React.createElement("td", {
-    style: {
-      padding: "8px 12px"
-    }
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: selOrderIds.includes(o.id),
@@ -8006,24 +8638,44 @@ function AccountsTab({
     }
   })), /*#__PURE__*/React.createElement("td", {
     style: {
-      padding: "8px 12px"
-    }
+      padding: "8px 12px",
+      cursor: "pointer"
+    },
+    onClick: () => setSelOrderIds(prev => prev.includes(o.id) ? prev.filter(id => id !== o.id) : [...prev, o.id])
   }, o.date), /*#__PURE__*/React.createElement("td", {
     style: {
       padding: "8px 12px",
-      fontWeight: 700
-    }
+      fontWeight: 700,
+      cursor: "pointer"
+    },
+    onClick: () => setSelOrderIds(prev => prev.includes(o.id) ? prev.filter(id => id !== o.id) : [...prev, o.id])
   }, "#", o.orderNumber), /*#__PURE__*/React.createElement("td", {
     style: {
       padding: "8px 12px",
-      fontSize: 12
-    }
-  }, o.items.map(x => x.qty + "x " + x.name).join(", ")), /*#__PURE__*/React.createElement("td", {
+      fontSize: 12,
+      cursor: "pointer"
+    },
+    onClick: () => setSelOrderIds(prev => prev.includes(o.id) ? prev.filter(id => id !== o.id) : [...prev, o.id])
+  }, o.items.map(x => x.qty + "x " + x.name).join(", "), o.note && o.note !== "Ordered via Accounts tab" ? " — " + o.note : ""), /*#__PURE__*/React.createElement("td", {
     style: {
       padding: "8px 12px",
-      fontWeight: 700
+      fontWeight: 700,
+      cursor: "pointer"
+    },
+    onClick: () => setSelOrderIds(prev => prev.includes(o.id) ? prev.filter(id => id !== o.id) : [...prev, o.id])
+  }, fmt(o.total)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px"
     }
-  }, fmt(o.total)))))), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => {
+      if (!window.confirm("Cancel order #" + o.orderNumber + " for " + fmt(o.total) + "? Use this only if the order was placed by mistake — not to remove a real charge.")) return;
+      setSales(prevSales => prevSales.filter(s => s.id !== o.id));
+    },
+    color: C.red,
+    outline: true
+  }, "Cancel")))))), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.lightGold,
       borderRadius: 8,
@@ -8092,7 +8744,7 @@ function AccountsTab({
     style: {
       background: C.green
     }
-  }, ["Date", "Order #", "Amount", "Method", "Note"].map(h => /*#__PURE__*/React.createElement("th", {
+  }, ["Date", "Order #", "Items", "Amount", "Method", "Note"].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: {
       color: C.white,
@@ -8118,6 +8770,12 @@ function AccountsTab({
   }, "#", o.orderNumber), /*#__PURE__*/React.createElement("td", {
     style: {
       padding: "8px 12px",
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, o.items.map(x => x.qty + "x " + x.name).join(", ")), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "8px 12px",
       fontWeight: 700,
       color: C.green
     }
@@ -8136,7 +8794,7 @@ function AccountsTab({
       background: C.lightGold
     }
   }, /*#__PURE__*/React.createElement("td", {
-    colSpan: 2,
+    colSpan: 3,
     style: {
       padding: "9px 12px",
       fontWeight: 700
@@ -8191,14 +8849,94 @@ function AccountsTab({
     style: {
       maxWidth: 160
     }
-  }))), invoiceOrders.length === 0 ? /*#__PURE__*/React.createElement("div", {
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.gray
+    }
+  }, "Narrows the list below — paid and unpaid orders both show, pick exactly which ones belong on the invoice.")), invoiceRangeOrders.length === 0 ? /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
-      padding: 30,
+      padding: 20,
       color: C.gray,
       fontSize: 13
     }
-  }, "No orders in this date range for this account.") : /*#__PURE__*/React.createElement("div", {
+  }, "No orders in this date range for this account.") : /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 13,
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      background: C.green
+    }
+  }, ["", "Date", "Order #", "Items", "Total", "Status"].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      color: C.white,
+      padding: "7px 10px",
+      textAlign: "left",
+      fontSize: 12
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, [...invoiceRangeOrders].sort((a, b) => ((a.settledDate || a.date) + a.time).localeCompare((b.settledDate || b.date) + b.time)).map((o, i) => /*#__PURE__*/React.createElement("tr", {
+    key: o.id,
+    onClick: () => setInvoiceSelectedIds(prev => prev.includes(o.id) ? prev.filter(id => id !== o.id) : [...prev, o.id]),
+    style: {
+      background: invoiceSelectedIds.includes(o.id) ? C.lightGold : i % 2 === 0 ? C.white : C.cream,
+      borderBottom: "1px solid " + C.border,
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "7px 10px"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: invoiceSelectedIds.includes(o.id),
+    onChange: () => {},
+    style: {
+      width: 16,
+      height: 16
+    }
+  })), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "7px 10px"
+    }
+  }, o.settledDate || o.date), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "7px 10px",
+      fontWeight: 700
+    }
+  }, "#", o.orderNumber), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "7px 10px",
+      fontSize: 12
+    }
+  }, o.items.map(x => x.qty + "x " + x.name).join(", ")), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "7px 10px",
+      fontWeight: 700
+    }
+  }, fmt(o.total)), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "7px 10px"
+    }
+  }, o.paymentStatus === "paid" ? /*#__PURE__*/React.createElement(Badge, {
+    small: true,
+    color: C.green
+  }, "Paid") : /*#__PURE__*/React.createElement(Badge, {
+    small: true,
+    color: C.orange
+  }, "Pending")))))), invoiceOrders.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: 20,
+      color: C.gray,
+      fontSize: 13
+    }
+  }, "Tick which orders above belong on this invoice.") : /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.lightGold,
       borderRadius: 10,
@@ -9689,11 +10427,20 @@ function EODTab({
   cateringEvents
 }) {
   const [eodRecords, setEodRecords, loaded] = usePersistedState("tog-eod", []);
+  const [pettyCash, setPettyCash, pettyLoaded] = usePersistedState("tog-petty-cash", []);
   const [selDate, setSelDate] = useState(today());
   const [eodSec, setEodSec] = useState("balance"); // balance | transactions
   const [cashCounted, setCashCounted] = useState("");
   const [cardTotal, setCardTotal] = useState("");
   const [transferTotal, setTransferTotal] = useState("");
+  const [tipsCard, setTipsCard] = useState("");
+  const [tipsTransfer, setTipsTransfer] = useState("");
+  const [tipsCash, setTipsCash] = useState("");
+  const [showPettyForm, setShowPettyForm] = useState(false);
+  const [pettyAmt, setPettyAmt] = useState("");
+  const [pettyDir, setPettyDir] = useState("subtract");
+  const [pettyReason, setPettyReason] = useState("");
+  const [pettyReceipt, setPettyReceipt] = useState(false);
   const [notes, setNotes] = useState("");
   const [saved, setSaved] = useState(false);
   // Restore saved values when date changes
@@ -9737,9 +10484,40 @@ function EODTab({
   const refundTotal = dayRefunds.reduce((s, r) => s + r.amount, 0);
   const netRevenue = posTotal; // refunds are already subtracted out above, per method
 
-  const cashVar = parseFloat(cashCounted || 0) - posCash;
-  const cardVar = parseFloat(cardTotal || 0) - posCard;
-  const balanced = Math.abs(cashVar) < 0.05 && Math.abs(cardVar) < 0.05;
+  // Tips arrive through whichever method the customer used, but you pay
+  // them all out of cash regardless — so a card/transfer tip inflates
+  // that terminal's real total above what sales alone explain (expected
+  // to be higher, so it's not a false "over"), while cash drops by the
+  // full tip pool since none of it stays in the drawer.
+  const totalTipsToday = parseFloat(tipsCard || 0) + parseFloat(tipsTransfer || 0) + parseFloat(tipsCash || 0);
+  const dayPettyCash = (pettyCash || []).filter(p => p.date === selDate);
+  const pettyCashNet = dayPettyCash.reduce((s, p) => s + (p.direction === "add" ? p.amount : -p.amount), 0);
+  const cashVar = parseFloat(cashCounted || 0) - (posCash - totalTipsToday + pettyCashNet);
+  const cardVar = parseFloat(cardTotal || 0) - (posCard + parseFloat(tipsCard || 0));
+  const transferVar = parseFloat(transferTotal || 0) - (posTransf + parseFloat(tipsTransfer || 0));
+  const balanced = Math.abs(cashVar) < 0.05 && Math.abs(cardVar) < 0.05 && Math.abs(transferVar) < 0.05;
+  const addPettyCash = () => {
+    const amt = parseFloat(pettyAmt);
+    if (!amt || amt <= 0 || !pettyReason.trim()) {
+      alert("Enter an amount and a reason.");
+      return;
+    }
+    setPettyCash([...(pettyCash || []), {
+      id: Date.now(),
+      date: selDate,
+      amount: amt,
+      direction: pettyDir,
+      reason: pettyReason.trim(),
+      hasReceipt: pettyReceipt
+    }]);
+    setPettyAmt("");
+    setPettyReason("");
+    setPettyReceipt(false);
+    setShowPettyForm(false);
+  };
+  const removePettyCash = id => {
+    if (window.confirm("Remove this petty cash entry?")) setPettyCash((pettyCash || []).filter(p => p.id !== id));
+  };
   const existing = eodRecords.find(r => r.date === selDate);
 
   // Restore physical count values when switching dates
@@ -9748,6 +10526,9 @@ function EODTab({
     setCashCounted(existing ? String(existing.cashCounted || "") : "");
     setCardTotal(existing ? String(existing.cardTotal || "") : "");
     setTransferTotal(existing ? String(existing.transferTotal || "") : "");
+    setTipsCard(existing ? String(existing.tipsCard || "") : "");
+    setTipsTransfer(existing ? String(existing.tipsTransfer || "") : "");
+    setTipsCash(existing ? String(existing.tipsCash || "") : "");
     setNotes(existing ? existing.notes || "" : "");
   }
   const saveEOD = () => {
@@ -9764,8 +10545,14 @@ function EODTab({
       transferTotal: parseFloat(transferTotal || 0),
       cashVar,
       cardVar,
+      transferVar,
       posGST,
       posPST,
+      tipsCard: parseFloat(tipsCard || 0),
+      tipsTransfer: parseFloat(tipsTransfer || 0),
+      tipsCash: parseFloat(tipsCash || 0),
+      totalTipsToday,
+      pettyCashNet,
       refundTotal,
       orders: paidDay.length,
       notes,
@@ -10125,7 +10912,171 @@ function EODTab({
     value: transferTotal,
     onChange: setTransferTotal,
     placeholder: "Total transfers received"
-  })), cashCounted && cardTotal && /*#__PURE__*/React.createElement("div", {
+  }), transferTotal && /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 4,
+      fontWeight: 700,
+      color: Math.abs(transferVar) < 0.05 ? C.green : C.red
+    }
+  }, Math.abs(transferVar) < 0.05 ? "Balanced" : transferVar > 0 ? "+" + fmt(transferVar) + " OVER" : fmt(Math.abs(transferVar)) + " SHORT")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: "1px solid " + C.border,
+      paddingTop: 10,
+      marginTop: 4
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      marginBottom: 6
+    }
+  }, "Tips Collected Today (paid out from cash regardless of how they came in)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Card Machine"), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: tipsCard,
+    onChange: setTipsCard,
+    placeholder: "0.00"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Transfer"), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: tipsTransfer,
+    onChange: setTipsTransfer,
+    placeholder: "0.00"
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Cash"), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: tipsCash,
+    onChange: setTipsCash,
+    placeholder: "0.00"
+  }))), totalTipsToday > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.charcoal,
+      marginTop: 6
+    }
+  }, "Total tips today: ", /*#__PURE__*/React.createElement("strong", null, fmt(totalTipsToday)), " — this amount is expected to come out of cash, and won't count against your cash balance.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderTop: "1px solid " + C.border,
+      paddingTop: 10,
+      marginTop: 4
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700
+    }
+  }, "Petty Cash ", dayPettyCash.length > 0 && "(" + fmt(pettyCashNet) + " net today)"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => setShowPettyForm(!showPettyForm),
+    color: C.orange,
+    outline: true
+  }, showPettyForm ? "Cancel" : "+ Add Entry")), dayPettyCash.length > 0 && dayPettyCash.map(p => /*#__PURE__*/React.createElement("div", {
+    key: p.id,
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      background: C.cream,
+      borderRadius: 6,
+      padding: "6px 10px",
+      marginBottom: 4,
+      fontSize: 12
+    }
+  }, /*#__PURE__*/React.createElement("span", null, p.direction === "add" ? "+" : "-", fmt(p.amount), " — ", p.reason, p.hasReceipt ? " 🧾" : ""), /*#__PURE__*/React.createElement("button", {
+    onClick: () => removePettyCash(p.id),
+    style: {
+      background: "none",
+      border: "none",
+      color: C.red,
+      cursor: "pointer",
+      fontWeight: 700
+    }
+  }, "x"))), showPettyForm && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      borderRadius: 8,
+      padding: 10,
+      marginTop: 6
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement(Sel, {
+    value: pettyDir,
+    onChange: setPettyDir,
+    options: ["subtract", "add"],
+    style: {
+      width: 120
+    }
+  }), /*#__PURE__*/React.createElement(Inp, {
+    type: "number",
+    value: pettyAmt,
+    onChange: setPettyAmt,
+    placeholder: "Amount"
+  })), /*#__PURE__*/React.createElement(Inp, {
+    value: pettyReason,
+    onChange: setPettyReason,
+    placeholder: "Reason (e.g. bought napkins from Save-On)",
+    style: {
+      marginBottom: 8
+    }
+  }), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 12,
+      marginBottom: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: pettyReceipt,
+    onChange: e => setPettyReceipt(e.target.checked)
+  }), " Receipt kept"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: addPettyCash,
+    style: {
+      width: "100%"
+    }
+  }, "Save Entry")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.gray,
+      marginTop: 6
+    }
+  }, "\"Subtract\" is cash taken from the drawer for a purchase — it reduces what your cash count is expected to be, so it won't look like a shortage. \"Add\" is cash put back in (change returned, float top-up).")), cashCounted && cardTotal && transferTotal && /*#__PURE__*/React.createElement("div", {
     style: {
       background: balanced ? C.green + "22" : C.red + "22",
       border: "2px solid " + (balanced ? C.green : C.red),
@@ -10161,7 +11112,7 @@ function EODTab({
     style: {
       background: C.green
     }
-  }, ["#", "Time", "Items", "Type", "Payment", "Discount", "Total", ""].map(h => /*#__PURE__*/React.createElement("th", {
+  }, ["#", "Time", "Customer", "Items", "Type", "Payment", "Discount", "Total", ""].map(h => /*#__PURE__*/React.createElement("th", {
     key: h,
     style: {
       color: C.white,
@@ -10170,7 +11121,7 @@ function EODTab({
       fontSize: 11
     }
   }, h)))), /*#__PURE__*/React.createElement("tbody", null, paidDay.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 8,
+    colSpan: 9,
     style: {
       padding: 20,
       textAlign: "center",
@@ -10194,6 +11145,12 @@ function EODTab({
         padding: "8px 12px"
       }
     }, s.time), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        fontSize: 11,
+        color: C.teal
+      }
+    }, s.accountId ? (accounts.find(a => a.id === s.accountId) || {}).name || "" : ""), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "8px 12px",
         fontSize: 11
@@ -14533,13 +15490,84 @@ function MenuTab({
           padding: "6px 8px",
           fontWeight: 800
         }
-      }, "TOTAL COST PER SERVING"), /*#__PURE__*/React.createElement("td", {
+      }, "TOTAL COST PER SERVING (guaranteed)"), /*#__PURE__*/React.createElement("td", {
         style: {
           padding: "6px 8px",
           fontWeight: 800,
           color: C.green
         }
-      }, fmt(bd.total))))))));
+      }, fmt(bd.total))))), (item.customGroups || []).length > 0 && /*#__PURE__*/React.createElement("div", {
+        style: {
+          marginTop: 14
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontWeight: 700,
+          fontSize: 12,
+          marginBottom: 6,
+          color: C.charcoal
+        }
+      }, "Possible Add-Ons (not guaranteed — depends what the customer picks)"), item.customGroups.map(g => /*#__PURE__*/React.createElement("div", {
+        key: g.id,
+        style: {
+          marginBottom: 8
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 11,
+          color: C.gray,
+          marginBottom: 3
+        }
+      }, g.label), /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 6
+        }
+      }, g.options.map(opt => {
+        let optCost = 0,
+          hasIngredient = false;
+        (opt.sideIds || []).forEach(sid => {
+          const s = sides.find(x => x.id === sid);
+          if (s) {
+            hasIngredient = true;
+            optCost += (Array.isArray(s.recipe) ? s.recipe : []).reduce((sum, ing) => {
+              const inv = inventory.find(i => i.id === ing.invId);
+              return sum + (inv ? effectiveCost(inv).cost * ing.qty : 0);
+            }, 0);
+          }
+        });
+        (opt.packagingIds || []).forEach(pid => {
+          const p = packaging.find(x => x.id === pid);
+          if (p) {
+            hasIngredient = true;
+            optCost += (Array.isArray(p.recipe) ? p.recipe : []).reduce((sum, ing) => {
+              const inv = inventory.find(i => i.id === ing.invId);
+              return sum + (inv ? effectiveCost(inv).cost * ing.qty : 0);
+            }, 0);
+          }
+        });
+        if (opt.proteinId) {
+          const p = proteins.find(x => x.id === opt.proteinId);
+          if (p) {
+            hasIngredient = true;
+            optCost += (Array.isArray(p.recipe) ? p.recipe : []).reduce((sum, ing) => {
+              const inv = inventory.find(i => i.id === ing.invId);
+              return sum + (inv ? effectiveCost(inv).cost * ing.qty : 0);
+            }, 0);
+          }
+        }
+        return /*#__PURE__*/React.createElement("div", {
+          key: opt.name,
+          style: {
+            background: C.white,
+            border: "1px solid " + C.border,
+            borderRadius: 6,
+            padding: "4px 10px",
+            fontSize: 11
+          }
+        }, opt.name, opt.price > 0 ? " (+" + fmt(opt.price) + " charged)" : "", hasIngredient ? " — ingredient cost " + fmt(optCost) : " — no ingredient linked");
+      }))))))));
     });
   })())))), menuView === "components" && /*#__PURE__*/React.createElement("div", null, editCompId && /*#__PURE__*/React.createElement("div", {
     style: {
