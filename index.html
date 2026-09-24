@@ -208,6 +208,7 @@ const DEFAULT_SETTINGS = {
   },
   expenseCategories: ["Lease", "Insurance", "Food & Inventory", "Supplies", "Marketing", "Utilities", "Staff Wages", "Licensing", "Other"],
   menuCategories: ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"],
+  inventoryCategories: ["Proteins", "Dry Goods", "Produce", "Pantry", "Spices", "Sides", "Beverages", "Packaging"],
   // Verified against CRA/BC published figures as of when this was set up.
   // These change every January (CRA) and every June (BC min wage) — there
   // is no way to build this once and forget it. Edit them in Settings each
@@ -3289,6 +3290,7 @@ function InventoryTab({
   setProteins,
   sides,
   setSides,
+  packaging,
   canSeeRecipes,
   countLog,
   setCountLog
@@ -3418,6 +3420,10 @@ function InventoryTab({
     });
   };
   const removeFromPurchaseList = id => setPurchaseList(purchaseList.filter(p => p.id !== id));
+  const updatePurchaseListQty = (id, qty) => setPurchaseList(purchaseList.map(p => p.id === id ? {
+    ...p,
+    qty: parseFloat(qty) || 0
+  } : p));
 
   // Confirming a purchase-list item as received uses the exact same
   // weighted-average cost math as the regular "+ Receive" button — it's
@@ -3478,7 +3484,10 @@ function InventoryTab({
   const [compLines, setCompLines] = useState([]);
   const [newCompName, setNewCompName] = useState("");
   const [newCompType, setNewCompType] = useState("protein");
-  const CATS = ["Proteins", "Dry Goods", "Produce", "Pantry", "Spices", "Sides", "Beverages", "Packaging"];
+  const CATS = settings.inventoryCategories || ["Proteins", "Dry Goods", "Produce", "Pantry", "Spices", "Sides", "Beverages", "Packaging"];
+  const [newInvCatName, setNewInvCatName] = useState("");
+  const [invCatAddMode, setInvCatAddMode] = useState(false);
+  const [countCatFilter, setCountCatFilter] = useState("All");
   const allSuppliers = settings.suppliers || [];
   const lowStock = inventory.filter(i => i.stock <= i.minStock);
   const bestPrice = item => {
@@ -3506,15 +3515,38 @@ function InventoryTab({
       bottleneck
     };
   };
+
+  // Matches deductInventory's real logic exactly: an ingredient can reach
+  // a dish through its own Base Recipe, its default Protein, its default
+  // Side(s), or its default Packaging — checking only the first of these
+  // (as this used to) makes an ingredient say "not in any recipe" even
+  // while it's correctly deducting stock on every sale through one of the
+  // other three paths, which is confusing at exactly the wrong moment.
   const getIngUsage = (invId, stock) => {
     const usage = [];
     (menu || []).forEach(m => {
-      const recipe = recipes[m.id] || [];
-      const ing = recipe.find(r => r.invId === invId);
-      if (!ing || ing.qty <= 0) return;
+      let qtyPerServing = 0;
+      const baseIng = (recipes[m.id] || []).find(r => r.invId === invId);
+      if (baseIng) qtyPerServing += baseIng.qty;
+      if (m.proteinId) {
+        const prot = (proteins || []).find(p => p.id === m.proteinId);
+        const protIng = prot && (prot.recipe || []).find(r => r.invId === invId);
+        if (protIng) qtyPerServing += protIng.qty;
+      }
+      (m.sideIds || []).forEach(sid => {
+        const side = (sides || []).find(s => s.id === sid);
+        const sideIng = side && (side.recipe || []).find(r => r.invId === invId);
+        if (sideIng) qtyPerServing += sideIng.qty;
+      });
+      (m.packagingIds || []).forEach(pid => {
+        const pkg = (packaging || []).find(p => p.id === pid);
+        const pkgIng = pkg && (pkg.recipe || []).find(r => r.invId === invId);
+        if (pkgIng) qtyPerServing += pkgIng.qty;
+      });
+      if (qtyPerServing <= 0) return;
       usage.push({
         name: m.name,
-        servings: Math.floor(stock / ing.qty)
+        servings: Math.floor(stock / qtyPerServing)
       });
     });
     return usage.sort((a, b) => a.servings - b.servings).slice(0, 4);
@@ -3839,12 +3871,46 @@ function InventoryTab({
       display: "block",
       marginBottom: 4
     }
-  }, "Category"), /*#__PURE__*/React.createElement("select", {
+  }, "Category"), invCatAddMode ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement(Inp, {
+    value: newInvCatName,
+    onChange: setNewInvCatName,
+    placeholder: "New category name",
+    style: {
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => {
+      if (!newInvCatName.trim()) return;
+      setSettings({
+        ...settings,
+        inventoryCategories: [...CATS, newInvCatName.trim()]
+      });
+      setForm({
+        ...form,
+        cat: newInvCatName.trim()
+      });
+      setNewInvCatName("");
+      setInvCatAddMode(false);
+    }
+  }, "Add"), /*#__PURE__*/React.createElement(Btn, {
+    small: true,
+    onClick: () => setInvCatAddMode(false),
+    color: C.charcoal,
+    outline: true
+  }, "x")) : /*#__PURE__*/React.createElement("select", {
     value: form.cat,
-    onChange: e => setForm({
-      ...form,
-      cat: e.target.value
-    }),
+    onChange: e => {
+      if (e.target.value === "__new__") setInvCatAddMode(true);else setForm({
+        ...form,
+        cat: e.target.value
+      });
+    },
     style: {
       width: "100%",
       border: "1px solid " + C.border,
@@ -3856,7 +3922,9 @@ function InventoryTab({
   }, CATS.map(c => /*#__PURE__*/React.createElement("option", {
     key: c,
     value: c
-  }, c)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, c)), /*#__PURE__*/React.createElement("option", {
+    value: "__new__"
+  }, "+ Add new category..."))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 12,
       display: "block",
@@ -4187,7 +4255,18 @@ function InventoryTab({
       marginBottom: 14,
       flexWrap: "wrap"
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 11,
+      color: C.charcoal,
+      display: "block",
+      marginBottom: 3
+    }
+  }, "Category"), /*#__PURE__*/React.createElement(Sel, {
+    value: countCatFilter,
+    onChange: setCountCatFilter,
+    options: ["All", ...CATS]
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 13,
       color: C.charcoal
@@ -4231,7 +4310,7 @@ function InventoryTab({
       textAlign: "left",
       fontSize: 11
     }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, inventory.map((item, idx) => {
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, inventory.filter(item => countCatFilter === "All" || item.cat === countCatFilter).map((item, idx) => {
     const phys = physCounts[item.id];
     const physNum = parseFloat(phys);
     const hasCount = phys !== undefined && phys !== "";
@@ -4852,20 +4931,38 @@ function InventoryTab({
         justifyContent: "space-between",
         alignItems: "center"
       }
-    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
       style: {
         fontWeight: 700
       }
-    }, item ? item.name : "(removed item)"), /*#__PURE__*/React.createElement("span", {
+    }, item ? item.name : "(removed item)"), /*#__PURE__*/React.createElement("input", {
+      type: "number",
+      value: p.qty,
+      onChange: e => updatePurchaseListQty(p.id, e.target.value),
       style: {
-        color: C.charcoal,
-        marginLeft: 8
+        width: 70,
+        border: "1px solid " + C.border,
+        borderRadius: 6,
+        padding: "4px 8px",
+        fontSize: 13,
+        fontWeight: 700
       }
-    }, p.qty, " ", item ? item.unit : "", " from ", p.supplier || "(supplier not set)"), p.note && /*#__PURE__*/React.createElement("div", {
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.charcoal
+      }
+    }, item ? item.unit : "", " from ", p.supplier || "(supplier not set)"), p.note && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 12,
         color: C.gray,
-        marginTop: 2
+        width: "100%"
       }
     }, p.note)), /*#__PURE__*/React.createElement("div", {
       style: {
@@ -16485,6 +16582,7 @@ function App() {
     setProteins: setProteins,
     sides: sides,
     setSides: setSides,
+    packaging: packaging,
     canSeeRecipes: canSeeRecipes,
     countLog: countLog,
     setCountLog: setCountLog
