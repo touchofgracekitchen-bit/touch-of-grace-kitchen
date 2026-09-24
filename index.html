@@ -3393,6 +3393,15 @@ function InventoryTab({
     setManualInvId("");
     setManualSupplier("");
   };
+  const [plForm, setPlForm] = useState({
+    invId: "",
+    supplier: "",
+    qty: "",
+    note: ""
+  });
+  const [receivingPlId, setReceivingPlId] = useState(null);
+  const [receivingQty, setReceivingQty] = useState("");
+  const [receivingPrice, setReceivingPrice] = useState("");
   const addToPurchaseList = () => {
     if (!plForm.invId || !plForm.qty) return;
     setPurchaseList([...purchaseList, {
