@@ -3316,39 +3316,83 @@ function InventoryTab({
   const [sourcingNotes, setSourcingNotes, srcLoaded] = usePersistedState("tog-sourcing-notes", []);
   const [purchaseList, setPurchaseList, plLoaded] = usePersistedState("tog-purchase-list", []);
   const REASONS = ["Better Quality", "Lower Price", "Better Service", "Testing", "Other"];
-  const [srcForm, setSrcForm] = useState({
-    invId: "",
-    supplier: "",
-    active: true,
-    reason: REASONS[0],
-    note: ""
-  });
-  const [plForm, setPlForm] = useState({
-    invId: "",
-    supplier: "",
-    qty: "",
-    note: ""
-  });
-  const [receivingPlId, setReceivingPlId] = useState(null);
-  const [receivingQty, setReceivingQty] = useState("");
-  const [receivingPrice, setReceivingPrice] = useState("");
-  const addSourcingNote = () => {
-    if (!srcForm.invId || !srcForm.supplier.trim()) return;
-    setSourcingNotes([...sourcingNotes, {
-      id: Date.now(),
-      ...srcForm,
-      invId: parseInt(srcForm.invId),
-      supplier: srcForm.supplier.trim()
-    }]);
-    setSrcForm({
-      invId: "",
-      supplier: "",
-      active: true,
-      reason: REASONS[0],
-      note: ""
-    });
+  // Which items belong to which supplier is derived straight from the
+  // prices you've already entered on each item (Edit, or automatically
+  // whenever you receive stock) — nothing to duplicate or keep in sync by
+  // hand. sourcingNotes only holds the extra layer on top: your reason,
+  // whether you're still buying from there, and a note — one entry per
+  // item+supplier pair, added the first time you touch either.
+  const metaFor = (invId, supplier) => sourcingNotes.find(s => s.invId === invId && s.supplier === supplier);
+  const [editingMetaKey, setEditingMetaKey] = useState(null); // invId+"|"+supplier
+  const [editReason, setEditReason] = useState(REASONS[0]);
+  const [editNote, setEditNote] = useState("");
+  const openMetaEditor = (invId, supplier) => {
+    const existing = metaFor(invId, supplier);
+    setEditingMetaKey(invId + "|" + supplier);
+    setEditReason(existing ? existing.reason : REASONS[0]);
+    setEditNote(existing ? existing.note : "");
   };
-  const removeSourcingNote = id => setSourcingNotes(sourcingNotes.filter(s => s.id !== id));
+  const saveMetaEditor = (invId, supplier) => {
+    const existing = metaFor(invId, supplier);
+    if (existing) {
+      setSourcingNotes(sourcingNotes.map(s => s.id === existing.id ? {
+        ...s,
+        reason: editReason,
+        note: editNote
+      } : s));
+    } else {
+      setSourcingNotes([...sourcingNotes, {
+        id: Date.now(),
+        invId,
+        supplier,
+        active: true,
+        reason: editReason,
+        note: editNote
+      }]);
+    }
+    setEditingMetaKey(null);
+  };
+  const toggleSourcingActive = (invId, supplier) => {
+    const existing = metaFor(invId, supplier);
+    if (existing) {
+      setSourcingNotes(sourcingNotes.map(s => s.id === existing.id ? {
+        ...s,
+        active: !s.active
+      } : s));
+    } else {
+      // Wasn't tracked yet — first toggle records it as inactive, keeping the reason blank until you add one.
+      setSourcingNotes([...sourcingNotes, {
+        id: Date.now(),
+        invId,
+        supplier,
+        active: false,
+        reason: REASONS[0],
+        note: ""
+      }]);
+    }
+  };
+  const quickAddToPurchaseList = (invId, supplier) => {
+    const item = inventory.find(i => i.id === invId);
+    if (!item) return;
+    const suggestedQty = Math.max((item.minStock || 0) * 2 - (item.stock || 0), item.minStock || 1);
+    setPurchaseList([...purchaseList, {
+      id: Date.now(),
+      invId,
+      supplier,
+      qty: parseFloat(suggestedQty.toFixed(2)),
+      note: ""
+    }]);
+  };
+  // Fallback for a supplier you've looked into for an item but have no
+  // price on file for yet — everything else is derived automatically.
+  const [manualInvId, setManualInvId] = useState("");
+  const [manualSupplier, setManualSupplier] = useState("");
+  const addManualPairing = () => {
+    if (!manualInvId || !manualSupplier) return;
+    openMetaEditor(parseInt(manualInvId), manualSupplier);
+    setManualInvId("");
+    setManualSupplier("");
+  };
   const addToPurchaseList = () => {
     if (!plForm.invId || !plForm.qty) return;
     setPurchaseList([...purchaseList, {
@@ -4398,27 +4442,213 @@ function InventoryTab({
     style: {
       padding: "8px 12px"
     }
-  }, fmt(r.newAvgCost))))))), section === "sourcing" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+  }, fmt(r.newAvgCost))))))), section === "sourcing" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.lightGold,
+      borderRadius: 8,
+      padding: 12,
+      marginBottom: 16,
+      fontSize: 12,
+      color: C.charcoal
+    }
+  }, "Grouped by supplier, built automatically from the prices you've already entered on each item — add a price under a supplier (via Edit, or automatically when you receive stock) and it shows up here on its own, nothing to duplicate. Low stock items show a quick \"Add to Purchase List\" right where you see them."), allSuppliers.length === 0 && /*#__PURE__*/React.createElement(Card, {
+    style: {
+      textAlign: "center",
+      padding: 20,
+      color: C.gray
+    }
+  }, "No suppliers yet — add some in Settings → Suppliers first."), allSuppliers.map(supplier => {
+    const priced = inventory.filter(i => i.prices && i.prices[supplier] !== undefined);
+    const notedOnly = sourcingNotes.filter(s => s.supplier === supplier && !priced.some(i => i.id === s.invId));
+    const rows = [...priced.map(i => ({
+      item: i,
+      price: i.prices[supplier]
+    })), ...notedOnly.map(s => ({
+      item: inventory.find(i => i.id === s.invId),
+      price: null
+    })).filter(r => r.item)];
+    if (rows.length === 0) return null;
+    return /*#__PURE__*/React.createElement(Card, {
+      key: supplier,
+      style: {
+        padding: 0,
+        overflow: "hidden",
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "10px 14px",
+        background: C.cream,
+        fontWeight: 700,
+        fontSize: 14
+      }
+    }, supplier), /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: C.green
+      }
+    }, ["Item", "Price Here", "Stock", "Status", "Reason / Note", ""].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: {
+        color: C.white,
+        padding: "8px 12px",
+        textAlign: "left",
+        fontSize: 12
+      }
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, rows.map(({
+      item,
+      price
+    }) => {
+      const meta = metaFor(item.id, supplier);
+      const active = meta ? meta.active : true;
+      const low = item.minStock && item.stock <= item.minStock;
+      const key = item.id + "|" + supplier;
+      return /*#__PURE__*/React.createElement(React.Fragment, {
+        key: key
+      }, /*#__PURE__*/React.createElement("tr", {
+        style: {
+          background: !active ? "#F5F5F5" : low ? "#FFF3E0" : C.white,
+          borderBottom: "1px solid " + C.border,
+          opacity: active ? 1 : 0.6
+        }
+      }, /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px",
+          fontWeight: 600
+        }
+      }, item.name), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, price !== null ? fmt(price) : "no price on file"), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, item.stock, " ", item.unit, low && /*#__PURE__*/React.createElement(Badge, {
+        small: true,
+        color: C.orange,
+        style: {
+          marginLeft: 6
+        }
+      }, "LOW")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px"
+        }
+      }, active ? /*#__PURE__*/React.createElement(Badge, {
+        small: true,
+        color: C.green
+      }, "Buying here") : /*#__PURE__*/React.createElement(Badge, {
+        small: true,
+        color: C.gray
+      }, "Not using")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px",
+          fontSize: 12,
+          color: C.charcoal
+        }
+      }, meta ? meta.reason + (meta.note ? " — " + meta.note : "") : /*#__PURE__*/React.createElement("span", {
+        style: {
+          color: C.gray
+        }
+      }, "-- tap to add --")), /*#__PURE__*/React.createElement("td", {
+        style: {
+          padding: "8px 12px",
+          display: "flex",
+          gap: 4,
+          flexWrap: "wrap"
+        }
+      }, /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => openMetaEditor(item.id, supplier),
+        color: C.blue,
+        outline: true
+      }, "Note"), /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => toggleSourcingActive(item.id, supplier),
+        color: active ? C.gray : C.green,
+        outline: true
+      }, active ? "Gray Out" : "Restore"), active && /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => quickAddToPurchaseList(item.id, supplier),
+        color: C.orange
+      }, "+ Purchase List"))), editingMetaKey === key && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+        colSpan: 6,
+        style: {
+          padding: "10px 14px",
+          background: C.lightGold
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          gap: 8,
+          alignItems: "end",
+          flexWrap: "wrap"
+        }
+      }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+        style: {
+          fontSize: 11,
+          color: C.charcoal,
+          display: "block",
+          marginBottom: 3
+        }
+      }, "Reason"), /*#__PURE__*/React.createElement(Sel, {
+        value: editReason,
+        onChange: setEditReason,
+        options: REASONS
+      })), /*#__PURE__*/React.createElement("div", {
+        style: {
+          flex: 1,
+          minWidth: 160
+        }
+      }, /*#__PURE__*/React.createElement("label", {
+        style: {
+          fontSize: 11,
+          color: C.charcoal,
+          display: "block",
+          marginBottom: 3
+        }
+      }, "Note"), /*#__PURE__*/React.createElement(Inp, {
+        value: editNote,
+        onChange: setEditNote,
+        placeholder: "Any extra detail"
+      })), /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => saveMetaEditor(item.id, supplier)
+      }, "Save"), /*#__PURE__*/React.createElement(Btn, {
+        small: true,
+        onClick: () => setEditingMetaKey(null),
+        color: C.charcoal,
+        outline: true
+      }, "Cancel")))));
+    }))));
+  }), /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 16,
-      background: C.lightGold,
-      border: "2px solid " + C.gold
+      background: "#F5F5F5",
+      border: "1px dashed " + C.border
     }
-  }, /*#__PURE__*/React.createElement(SH, null, "Where We Get What, and Why"), /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(SH, null, "Note a Supplier With No Price on File Yet"), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 11,
       color: C.charcoal,
-      marginBottom: 12
-    }
-  }, "A running reference for you and your sister — which supplier an item comes from, and the reason, so the \"why\" doesn't get lost over time. Mark one inactive if you've decided to stop buying from a place, with the reason noted."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "grid",
-      gridTemplateColumns: "1.3fr 1fr 1fr 1.3fr auto",
-      gap: 8,
-      alignItems: "end",
       marginBottom: 10
     }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, "For when you got a quote or tested something but never actually priced/received it — everything else above happens automatically once a real price exists."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      alignItems: "end"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 11,
       color: C.charcoal,
@@ -4426,11 +4656,8 @@ function InventoryTab({
       marginBottom: 3
     }
   }, "Item"), /*#__PURE__*/React.createElement("select", {
-    value: srcForm.invId,
-    onChange: e => setSrcForm({
-      ...srcForm,
-      invId: e.target.value
-    }),
+    value: manualInvId,
+    onChange: e => setManualInvId(e.target.value),
     style: {
       width: "100%",
       padding: "8px 10px",
@@ -4445,161 +4672,37 @@ function InventoryTab({
   }, "-- Select item --"), inventory.map(i => /*#__PURE__*/React.createElement("option", {
     key: i.id,
     value: i.id
-  }, i.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+  }, i.name)))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 11,
       color: C.charcoal,
       display: "block",
       marginBottom: 3
     }
-  }, "Supplier"), /*#__PURE__*/React.createElement(Inp, {
-    value: srcForm.supplier,
-    onChange: v => setSrcForm({
-      ...srcForm,
-      supplier: v
-    }),
-    placeholder: "Supplier name"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: {
-      fontSize: 11,
-      color: C.charcoal,
-      display: "block",
-      marginBottom: 3
-    }
-  }, "Reason"), /*#__PURE__*/React.createElement(Sel, {
-    value: srcForm.reason,
-    onChange: v => setSrcForm({
-      ...srcForm,
-      reason: v
-    }),
-    options: REASONS
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
-    style: {
-      fontSize: 11,
-      color: C.charcoal,
-      display: "block",
-      marginBottom: 3
-    }
-  }, "Note (optional)"), /*#__PURE__*/React.createElement(Inp, {
-    value: srcForm.note,
-    onChange: v => setSrcForm({
-      ...srcForm,
-      note: v
-    }),
-    placeholder: "Any extra detail"
-  })), /*#__PURE__*/React.createElement(Btn, {
-    onClick: addSourcingNote
-  }, "+ Add")), /*#__PURE__*/React.createElement("label", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 6,
-      fontSize: 12
-    }
-  }, /*#__PURE__*/React.createElement("input", {
-    type: "checkbox",
-    checked: srcForm.active,
-    onChange: e => setSrcForm({
-      ...srcForm,
-      active: e.target.checked
-    })
-  }), " Currently buying from here (uncheck if this is a \"stopped buying\" note)")), /*#__PURE__*/React.createElement(Card, {
-    style: {
-      padding: 0,
-      overflow: "hidden",
-      marginBottom: 20
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "10px 14px",
-      background: C.cream,
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: 700,
-      fontSize: 13
-    }
-  }, "Sourcing Notes"), /*#__PURE__*/React.createElement(Btn, {
-    small: true,
-    onClick: () => window.print(),
-    color: C.blue,
-    outline: true
-  }, "Print")), /*#__PURE__*/React.createElement("table", {
+  }, "Supplier"), /*#__PURE__*/React.createElement("select", {
+    value: manualSupplier,
+    onChange: e => setManualSupplier(e.target.value),
     style: {
       width: "100%",
-      borderCollapse: "collapse",
-      fontSize: 13
+      padding: "8px 10px",
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      fontSize: 13,
+      background: C.white,
+      fontFamily: "inherit"
     }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
-    style: {
-      background: C.green
-    }
-  }, ["Item", "Supplier", "Status", "Reason", "Note", ""].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: {
-      color: C.white,
-      padding: "8px 12px",
-      textAlign: "left",
-      fontSize: 12
-    }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, sourcingNotes.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 6,
-    style: {
-      padding: 20,
-      textAlign: "center",
-      color: C.gray
-    }
-  }, "No sourcing notes yet.")) : sourcingNotes.map((s, i) => {
-    const item = inventory.find(x => x.id === s.invId);
-    return /*#__PURE__*/React.createElement("tr", {
-      key: s.id,
-      style: {
-        background: i % 2 === 0 ? C.white : C.cream,
-        borderBottom: "1px solid " + C.border
-      }
-    }, /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "8px 12px",
-        fontWeight: 600
-      }
-    }, item ? item.name : "(removed item)"), /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "8px 12px"
-      }
-    }, s.supplier), /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "8px 12px"
-      }
-    }, s.active ? /*#__PURE__*/React.createElement(Badge, {
-      small: true,
-      color: C.green
-    }, "Current") : /*#__PURE__*/React.createElement(Badge, {
-      small: true,
-      color: C.red
-    }, "Stopped")), /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "8px 12px"
-      }
-    }, s.reason), /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "8px 12px",
-        fontSize: 12,
-        color: C.charcoal
-      }
-    }, s.note || "--"), /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "8px 12px"
-      }
-    }, /*#__PURE__*/React.createElement(Btn, {
-      small: true,
-      onClick: () => removeSourcingNote(s.id),
-      color: C.red,
-      outline: true
-    }, "Remove")));
-  })))), /*#__PURE__*/React.createElement(Card, {
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "-- Select supplier --"), allSuppliers.map(s => /*#__PURE__*/React.createElement("option", {
+    key: s,
+    value: s
+  }, s)))), /*#__PURE__*/React.createElement(Btn, {
+    onClick: addManualPairing
+  }, "+ Add Note"))), /*#__PURE__*/React.createElement(Card, {
     style: {
       marginBottom: 16,
       background: "#E3F2FD",
@@ -4646,14 +4749,27 @@ function InventoryTab({
       display: "block",
       marginBottom: 3
     }
-  }, "Supplier"), /*#__PURE__*/React.createElement(Inp, {
+  }, "Supplier"), /*#__PURE__*/React.createElement("select", {
     value: plForm.supplier,
-    onChange: v => setPlForm({
+    onChange: e => setPlForm({
       ...plForm,
-      supplier: v
+      supplier: e.target.value
     }),
-    placeholder: "Supplier name"
-  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      width: "100%",
+      padding: "8px 10px",
+      border: "1px solid " + C.border,
+      borderRadius: 6,
+      fontSize: 13,
+      background: C.white,
+      fontFamily: "inherit"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "-- Select supplier --"), allSuppliers.map(s => /*#__PURE__*/React.createElement("option", {
+    key: s,
+    value: s
+  }, s)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
     style: {
       fontSize: 11,
       color: C.charcoal,
