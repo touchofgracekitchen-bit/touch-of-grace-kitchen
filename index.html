@@ -24,38 +24,72 @@
     var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxqbmhva2FoeGRldnN4d3BzemRzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAwMDA5MjgsImV4cCI6MjA5NTU3NjkyOH0.R-bxKsXiY7WiynjtKbx36BQhuaCT-8CB56ji7EtRdSw';
     var db = null;
     try { db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch(e) { console.warn('Supabase init failed:', e.message); }
-    async function dbSave(key, value) {
+    async function dbSave(key, value, tMs) {
       if (!db) return;
-      try { await db.from('tog_data').upsert({key:key,value:value,updated_at:new Date().toISOString()},{onConflict:'key'}); }
+      var iso = (typeof tMs === 'number') ? new Date(tMs).toISOString() : new Date().toISOString();
+      try { await db.from('tog_data').upsert({key:key,value:value,updated_at:iso},{onConflict:'key'}); }
       catch(e) { console.warn('DB save:', e.message); }
     }
     async function dbLoad(key) {
       if (!db) return null;
-      try { var r = await db.from('tog_data').select('value').eq('key',key).maybeSingle(); return r.data?r.data.value:null; }
+      try {
+        var r = await db.from('tog_data').select('value,updated_at').eq('key',key).maybeSingle();
+        return r.data ? { value: r.data.value, updated_at: r.data.updated_at } : null;
+      }
       catch(e) { return null; }
     }
   </script>
   <script>
 const {
   useState,
-  useEffect
+  useEffect,
+  useRef
 } = React;
+function tog_readLocal(storageKey) {
+  try {
+    const s = localStorage.getItem(storageKey);
+    if (s === null) return null;
+    const parsed = JSON.parse(s);
+    if (parsed && typeof parsed === "object" && "v" in parsed && "t" in parsed) return parsed;
+    // Legacy format from before timestamps existed: a bare value with no
+    // recorded age. Treat it as "as of right now" rather than "infinitely old" -
+    // we don't know how fresh it is, so the safe default is to NOT let a cloud
+    // row silently overwrite it; a real, newer edit will still win normally.
+    return {
+      v: parsed,
+      t: Date.now()
+    };
+  } catch (e) {
+    return null;
+  }
+}
+function tog_writeLocal(storageKey, value, t) {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify({
+      v: value,
+      t: t
+    }));
+  } catch (e) {}
+}
 function usePersistedState(key, def) {
-  const [val, setVal] = useState(() => {
-    try {
-      const s = localStorage.getItem("tog_" + key);
-      if (s !== null) return JSON.parse(s);
-    } catch (e) {}
-    return def;
-  });
+  const lk = "tog_" + key;
+  const initial = tog_readLocal(lk);
+  const [val, setVal] = useState(initial ? initial.v : def);
+  const localTimeRef = useRef(initial ? initial.t : 0);
+  const valRef = useRef(initial ? initial.v : def);
   useEffect(() => {
-    const lk = "tog_" + key;
     const pull = () => dbLoad(key).then(r => {
-      if (r != null) {
-        setVal(r);
-        try {
-          localStorage.setItem(lk, JSON.stringify(r));
-        } catch (e) {}
+      if (!r || r.value === undefined || r.value === null) return;
+      const remoteTime = r.updated_at ? new Date(r.updated_at).getTime() : 0;
+      if (remoteTime > localTimeRef.current) {
+        localTimeRef.current = remoteTime;
+        valRef.current = r.value;
+        setVal(r.value);
+        tog_writeLocal(lk, r.value, remoteTime);
+      } else if (remoteTime < localTimeRef.current) {
+        // Local is ahead of the cloud (e.g. a save never made it up) - heal the
+        // cloud instead of letting it stay stale, but never touch local state.
+        dbSave(key, valRef.current, localTimeRef.current);
       }
     });
     pull();
@@ -64,30 +98,32 @@ function usePersistedState(key, def) {
   }, [key]);
   const save = fn => setVal(prev => {
     const next = typeof fn === "function" ? fn(prev) : fn;
-    try {
-      localStorage.setItem("tog_" + key, JSON.stringify(next));
-    } catch (e) {}
-    dbSave(key, next);
+    const now = Date.now();
+    localTimeRef.current = now;
+    valRef.current = next;
+    tog_writeLocal(lk, next, now);
+    dbSave(key, next, now);
     return next;
   });
   return [val, save, true];
 }
 function useSharedState(key, def) {
-  const [val, setVal] = useState(() => {
-    try {
-      const s = localStorage.getItem("tog_shared_" + key);
-      if (s !== null) return JSON.parse(s);
-    } catch (e) {}
-    return def;
-  });
+  const lk = "tog_shared_" + key;
+  const initial = tog_readLocal(lk);
+  const [val, setVal] = useState(initial ? initial.v : def);
+  const localTimeRef = useRef(initial ? initial.t : 0);
+  const valRef = useRef(initial ? initial.v : def);
   useEffect(() => {
-    const lk = "tog_shared_" + key;
     const pull = () => dbLoad(key).then(r => {
-      if (r != null) {
-        setVal(r);
-        try {
-          localStorage.setItem(lk, JSON.stringify(r));
-        } catch (e) {}
+      if (!r || r.value === undefined || r.value === null) return;
+      const remoteTime = r.updated_at ? new Date(r.updated_at).getTime() : 0;
+      if (remoteTime > localTimeRef.current) {
+        localTimeRef.current = remoteTime;
+        valRef.current = r.value;
+        setVal(r.value);
+        tog_writeLocal(lk, r.value, remoteTime);
+      } else if (remoteTime < localTimeRef.current) {
+        dbSave(key, valRef.current, localTimeRef.current);
       }
     });
     pull();
@@ -101,10 +137,13 @@ function useSharedState(key, def) {
           filter: "key=eq." + key
         }, p => {
           if (p.new && p.new.value !== undefined) {
-            setVal(p.new.value);
-            try {
-              localStorage.setItem(lk, JSON.stringify(p.new.value));
-            } catch (e) {}
+            const remoteTime = p.new.updated_at ? new Date(p.new.updated_at).getTime() : Date.now();
+            if (remoteTime > localTimeRef.current) {
+              localTimeRef.current = remoteTime;
+              valRef.current = p.new.value;
+              setVal(p.new.value);
+              tog_writeLocal(lk, p.new.value, remoteTime);
+            }
           }
         }).subscribe();
       } catch (e) {}
@@ -121,10 +160,11 @@ function useSharedState(key, def) {
   }, [key]);
   const save = fn => setVal(prev => {
     const next = typeof fn === "function" ? fn(prev) : fn;
-    try {
-      localStorage.setItem("tog_shared_" + key, JSON.stringify(next));
-    } catch (e) {}
-    dbSave(key, next);
+    const now = Date.now();
+    localTimeRef.current = now;
+    valRef.current = next;
+    tog_writeLocal(lk, next, now);
+    dbSave(key, next, now);
     return next;
   });
   return [val, save, true];
