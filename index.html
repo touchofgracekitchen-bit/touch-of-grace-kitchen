@@ -164,7 +164,8 @@ const DEFAULT_SETTINGS = {
     email: "",
     gstNumber: "",
     pstNumber: "",
-    established: "2026"
+    established: "2026",
+    fiscalYearEnd: "12-31"
   },
   taxes: {
     gst: 5,
@@ -208,6 +209,20 @@ const DEFAULT_SETTINGS = {
     classificationUnit: "",
     rate: "",
     maxAssessableEarnings: 127500
+  },
+  // Self-service compliance tracking — not a filing service. You (or CRA's own
+  // free tools) still do the actual filing; this just tells you what's due when,
+  // so nothing gets missed without paying someone to track it for you.
+  compliance: {
+    gstFilingFrequency: "Annual",
+    // Annual / Quarterly / Monthly — whatever CRA assigned you
+    pstFilingFrequency: "Monthly",
+    // Monthly / Quarterly / Semi-Annually / Annually — whatever BC assigned you
+    incorporationDate: "",
+    // for the BC Corporate Annual Report due date
+    remittanceFrequency: "Regular",
+    // Regular (15th of following month) / Quarterly (new small employer, <$1,000/mo avg)
+    customItems: [] // [{id, label, dueDate, recurring:"none"/"monthly"/"yearly"}]
   }
 };
 const MENU_INIT = [
@@ -1390,6 +1405,181 @@ const printSection = (title, innerHtml) => {
     f.contentWindow.print();
   }, 200);
 };
+
+// -- BC PAYROLL COMPLIANCE MATH ------------------------------------------------
+// Verified against gov.bc.ca (Employment Standards Act), CRA, and WorkSafeBC as
+// of when this was built. Unit-tested against hand-calculated scenarios before
+// being wired into the UI below (Family Day/Easter/Victoria Day/Labour Day/BC
+// Day/Thanksgiving date rules, daily+weekly overtime pooling, and the average
+// day's pay stat-holiday formula).
+function bcEasterSunday(year) {
+  const a = year % 19,
+    b = Math.floor(year / 100),
+    c = year % 100;
+  const d = Math.floor(b / 4),
+    e = b % 4,
+    f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3),
+    h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4),
+    k = c % 4,
+    l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = (h + l - 7 * m + 114) % 31 + 1;
+  return new Date(year, month - 1, day);
+}
+function bcNthWeekdayOfMonth(year, month, weekday, n) {
+  const d = new Date(year, month, 1);
+  let count = 0;
+  while (true) {
+    if (d.getDay() === weekday) {
+      count++;
+      if (count === n) return new Date(d);
+    }
+    d.setDate(d.getDate() + 1);
+  }
+}
+function bcLastWeekdayOnOrBefore(year, month, day, weekday) {
+  const d = new Date(year, month, day);
+  while (d.getDay() !== weekday) d.setDate(d.getDate() - 1);
+  return d;
+}
+const bcDstr = d => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+
+// BC's 11 statutory holidays for a given year, as {name: "YYYY-MM-DD"}.
+function computeBCStatHolidays(year) {
+  const goodFriday = new Date(bcEasterSunday(year));
+  goodFriday.setDate(goodFriday.getDate() - 2);
+  return {
+    "New Year's Day": bcDstr(new Date(year, 0, 1)),
+    "Family Day": bcDstr(bcNthWeekdayOfMonth(year, 1, 1, 3)),
+    "Good Friday": bcDstr(goodFriday),
+    "Victoria Day": bcDstr(bcLastWeekdayOnOrBefore(year, 4, 24, 1)),
+    "Canada Day": bcDstr(new Date(year, 6, 1)),
+    "BC Day": bcDstr(bcNthWeekdayOfMonth(year, 7, 1, 1)),
+    "Labour Day": bcDstr(bcNthWeekdayOfMonth(year, 8, 1, 1)),
+    "National Day for Truth and Reconciliation": bcDstr(new Date(year, 8, 30)),
+    "Thanksgiving": bcDstr(bcNthWeekdayOfMonth(year, 9, 1, 2)),
+    "Remembrance Day": bcDstr(new Date(year, 10, 11)),
+    "Christmas Day": bcDstr(new Date(year, 11, 25))
+  };
+}
+
+// BC ESA overtime: daily thresholds (over 8hrs/day = 1.5x, over 12hrs/day = 2x)
+// plus a weekly 40hr threshold computed only from each day's "regular" (<=8hr)
+// pool, so daily-OT hours are never double-counted into the weekly calculation.
+// Work week = Sunday-Saturday (BC's standard default).
+function calcOvertimeForPeriod(entries, hourlyRate) {
+  const weekKey = dateStr => {
+    const d = new Date(dateStr + "T00:00:00");
+    const sun = new Date(d);
+    sun.setDate(d.getDate() - d.getDay());
+    return bcDstr(sun);
+  };
+  const byWeek = {};
+  entries.forEach(e => {
+    const wk = weekKey(e.date);
+    (byWeek[wk] = byWeek[wk] || []).push(e);
+  });
+  let regularHours = 0,
+    ot15Hours = 0,
+    ot2Hours = 0;
+  Object.values(byWeek).forEach(weekEntries => {
+    const byDay = {};
+    weekEntries.forEach(e => {
+      byDay[e.date] = (byDay[e.date] || 0) + shiftHoursOf(e);
+    });
+    let weekRegularPool = 0;
+    Object.values(byDay).forEach(hrs => {
+      const reg = Math.min(hrs, 8);
+      const ot15 = Math.max(0, Math.min(hrs, 12) - 8);
+      const ot2 = Math.max(0, hrs - 12);
+      weekRegularPool += reg;
+      ot15Hours += ot15;
+      ot2Hours += ot2;
+    });
+    if (weekRegularPool > 40) {
+      const excess = weekRegularPool - 40;
+      ot15Hours += excess;
+      weekRegularPool = 40;
+    }
+    regularHours += weekRegularPool;
+  });
+  const regularPay = regularHours * hourlyRate,
+    ot15Pay = ot15Hours * 1.5 * hourlyRate,
+    ot2Pay = ot2Hours * 2 * hourlyRate;
+  return {
+    regularHours,
+    ot15Hours,
+    ot2Hours,
+    regularPay,
+    ot15Pay,
+    ot2Pay,
+    totalPay: regularPay + ot15Pay + ot2Pay
+  };
+}
+function parseHMOf(str) {
+  const [h, m] = (str || "0:0").split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+function shiftHoursOf(e) {
+  if (!e.clockOut) return 0;
+  let diff = parseHMOf(e.clockOut) - parseHMOf(e.clockIn);
+  if (diff < 0) diff += 24 * 60;
+  return diff / 60;
+}
+
+// BC ESA statutory holiday pay: "average day's pay" = wages earned in the 30
+// calendar days before the holiday (straight-time, excluding OT premium)
+// divided by the number of days worked/wages earned in that window.
+// Eligibility: employed >=30 calendar days AND worked/earned wages on >=15 of
+// the 30 days before the holiday. If they also work ON the holiday: premium
+// pay (1.5x first 12hrs, 2x beyond) is IN ADDITION to the average day's pay,
+// never instead of it.
+function calcStatHolidayPay(employee, statHolidayDates, hourlyRate) {
+  const history = employee.clockHistory || [];
+  const results = [];
+  Object.entries(statHolidayDates).forEach(([name, dateStr]) => {
+    const holidayDate = new Date(dateStr + "T00:00:00");
+    const windowStart = new Date(holidayDate);
+    windowStart.setDate(windowStart.getDate() - 30);
+    const windowStartStr = bcDstr(windowStart);
+    const employedDays = employee.startDate ? Math.floor((holidayDate - new Date(employee.startDate + "T00:00:00")) / 86400000) : -1;
+    const daysInWindow = history.filter(h => h.date >= windowStartStr && h.date < dateStr);
+    const uniqueDaysWorked = new Set(daysInWindow.map(h => h.date)).size;
+    const eligible = employedDays >= 30 && uniqueDaysWorked >= 15;
+    if (!eligible) {
+      results.push({
+        name,
+        date: dateStr,
+        eligible: false,
+        avgDayPay: 0,
+        workedHoliday: false,
+        hoursOnHoliday: 0,
+        premiumPay: 0,
+        totalPay: 0
+      });
+      return;
+    }
+    const wagesInWindow = daysInWindow.reduce((s, h) => s + shiftHoursOf(h) * hourlyRate, 0);
+    const avgDayPay = uniqueDaysWorked > 0 ? wagesInWindow / uniqueDaysWorked : 0;
+    const workedOnHoliday = history.filter(h => h.date === dateStr);
+    const hoursOnHoliday = workedOnHoliday.reduce((s, h) => s + shiftHoursOf(h), 0);
+    const premiumPay = Math.min(hoursOnHoliday, 12) * 1.5 * hourlyRate + Math.max(0, hoursOnHoliday - 12) * 2 * hourlyRate;
+    results.push({
+      name,
+      date: dateStr,
+      eligible: true,
+      avgDayPay,
+      workedHoliday: hoursOnHoliday > 0,
+      hoursOnHoliday,
+      premiumPay,
+      totalPay: avgDayPay + premiumPay
+    });
+  });
+  return results;
+}
 
 // -- UI ATOMS -----------------------------------------------------------------
 const Badge = ({
@@ -6213,7 +6403,9 @@ function StaffTab({
   schedule,
   setSchedule,
   requests,
-  setRequests
+  setRequests,
+  payrollRuns,
+  setPayrollRuns
 }) {
   const [staffView, setStaffView] = useState("directory");
   const [expandedStaffId, setExpandedStaffId] = useState(null);
@@ -6300,6 +6492,40 @@ function StaffTab({
   const [vacGross, setVacGross] = useState("");
   const [vacPayoutAmt, setVacPayoutAmt] = useState("");
   const [vacNote, setVacNote] = useState("");
+
+  // -- Payroll compliance suite: Run Payroll / History / T4 / Remittance / WorkSafeBC / ROE / Calendar --
+  const [payrollSubView, setPayrollSubView] = useState("run");
+  const [runStaffId, setRunStaffId] = useState("");
+  const [runPeriodStart, setRunPeriodStart] = useState("");
+  const [runPeriodEnd, setRunPeriodEnd] = useState("");
+  const [runIncomeTax, setRunIncomeTax] = useState("");
+  const [runNotes, setRunNotes] = useState("");
+  const runRef = React.useRef(null);
+  const [t4Year, setT4Year] = useState(String(new Date().getFullYear()));
+  const [t4StaffId, setT4StaffId] = useState("");
+  const t4Ref = React.useRef(null);
+  const remitRef = React.useRef(null);
+  const wsbcRef = React.useRef(null);
+  const [roeStaffId, setRoeStaffId] = useState("");
+  const [roeLastDay, setRoeLastDay] = useState(today());
+  const [roeReasonCode, setRoeReasonCode] = useState("A");
+  const [roeReasonNote, setRoeReasonNote] = useState("");
+  const roeRef = React.useRef(null);
+  const [calLabel, setCalLabel] = useState("");
+  const [calDate, setCalDate] = useState("");
+  const [calRecurring, setCalRecurring] = useState("yearly");
+  const calRef = React.useRef(null);
+  const ROE_REASON_CODES = {
+    A: "Shortage of work / end of contract or season",
+    D: "Illness or injury",
+    E: "Quit",
+    F: "Maternity / parental leave",
+    G: "Retirement",
+    K: "Other",
+    M: "Dismissal",
+    N: "Leave of absence"
+  };
+  const compliance = settings.compliance || DEFAULT_SETTINGS.compliance;
 
   // BC ESA minimum: 4% of gross for the first 5 years of continuous
   // employment, 6% after that. This is a floor, not a cap — you can pay
@@ -6396,8 +6622,8 @@ function StaffTab({
   // rate on gross), then converts back to a per-period figure. This is for
   // budgeting, not a remittance amount — run real numbers through CRA's
   // PDOC calculator or your payroll provider before paying anyone.
-  const estimateDeductions = grossPerPeriod => {
-    const annual = grossPerPeriod * periodsPerYear;
+  const estimateDeductions = (grossPerPeriod, ppy = periodsPerYear) => {
+    const annual = grossPerPeriod * ppy;
     const cppable = Math.min(Math.max(annual - rates.cppBasicExemption, 0), rates.cppYMPE - rates.cppBasicExemption);
     const cpp2able = Math.min(Math.max(annual - rates.cppYMPE, 0), rates.cpp2YAMPE - rates.cppYMPE);
     const eiable = Math.min(annual, rates.eiMaxInsurable);
@@ -6405,10 +6631,10 @@ function StaffTab({
     const annualCPP2 = cpp2able * (rates.cpp2Rate / 100);
     const annualEI = eiable * (rates.eiRate / 100);
     return {
-      cpp: annualCPP / periodsPerYear,
-      cpp2: annualCPP2 / periodsPerYear,
-      ei: annualEI / periodsPerYear,
-      totalDeductions: (annualCPP + annualCPP2 + annualEI) / periodsPerYear
+      cpp: annualCPP / ppy,
+      cpp2: annualCPP2 / ppy,
+      ei: annualEI / ppy,
+      totalDeductions: (annualCPP + annualCPP2 + annualEI) / ppy
     };
   };
   const getPos = s => (positions || POSITIONS_INIT).find(p => p.id === s.positionId) || {
@@ -7068,7 +7294,11 @@ function StaffTab({
     onClick: () => setStaffView("concerns"),
     color: staffView === "concerns" ? C.red : C.charcoal,
     outline: staffView !== "concerns"
-  }, "Concerns ", pendingConcerns.length > 0 ? "⚠️ (" + pendingConcerns.length + ")" : "")), staffView === "concerns" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "Concerns ", pendingConcerns.length > 0 ? "⚠️ (" + pendingConcerns.length + ")" : ""), /*#__PURE__*/React.createElement(Btn, {
+    onClick: () => setStaffView("payroll"),
+    color: staffView === "payroll" ? C.teal : C.charcoal,
+    outline: staffView !== "payroll"
+  }, "Payroll & Compliance")), staffView === "concerns" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#FFEBEE",
       border: "1px solid " + C.red,
@@ -7553,7 +7783,1398 @@ function StaffTab({
       color: C.red,
       outline: true
     }, "Remove")));
-  }))))), staffView === "directory" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }))))), staffView === "payroll" && (() => {
+    const runEmployee = staff.find(s => String(s.id) === String(runStaffId));
+    let runPreview = null;
+    if (runEmployee && runPeriodStart && runPeriodEnd && runPeriodEnd >= runPeriodStart) {
+      const startYear = new Date(runPeriodStart + "T00:00:00").getFullYear();
+      const endYear = new Date(runPeriodEnd + "T00:00:00").getFullYear();
+      const allHolidays = {
+        ...computeBCStatHolidays(startYear),
+        ...(endYear !== startYear ? computeBCStatHolidays(endYear) : {})
+      };
+      const relevantHolidayEntries = Object.entries(allHolidays).filter(([n, d]) => d >= runPeriodStart && d <= runPeriodEnd);
+      const relevantHolidays = Object.fromEntries(relevantHolidayEntries);
+      const holidayDateSet = new Set(relevantHolidayEntries.map(([n, d]) => d));
+      const periodEntries = (runEmployee.clockHistory || []).filter(h => h.date >= runPeriodStart && h.date <= runPeriodEnd && !holidayDateSet.has(h.date));
+      const ot = calcOvertimeForPeriod(periodEntries, runEmployee.hourlyRate || 0);
+      const statResults = calcStatHolidayPay(runEmployee, relevantHolidays, runEmployee.hourlyRate || 0);
+      const statEligible = statResults.filter(r => r.eligible);
+      const statPayTotal = statEligible.reduce((s, r) => s + r.totalPay, 0);
+      const grossPay = ot.totalPay + statPayTotal;
+      const ded = estimateDeductions(grossPay, periodsPerYear);
+      const incomeTax = parseFloat(runIncomeTax) || 0;
+      const netPay = grossPay - ded.cpp - ded.cpp2 - ded.ei - incomeTax;
+      runPreview = {
+        ot,
+        statResults,
+        statEligible,
+        statPayTotal,
+        grossPay,
+        ded,
+        incomeTax,
+        netPay
+      };
+    }
+    const saveRun = () => {
+      if (!runEmployee || !runPreview) {
+        alert("Choose a staff member and a valid period first (end date on or after start date).");
+        return;
+      }
+      const rec = {
+        id: Date.now(),
+        staffId: runEmployee.id,
+        staffName: runEmployee.name,
+        periodStart: runPeriodStart,
+        periodEnd: runPeriodEnd,
+        payPeriodType: payPeriod,
+        regularHours: runPreview.ot.regularHours,
+        ot15Hours: runPreview.ot.ot15Hours,
+        ot2Hours: runPreview.ot.ot2Hours,
+        regularPay: runPreview.ot.regularPay,
+        ot15Pay: runPreview.ot.ot15Pay,
+        ot2Pay: runPreview.ot.ot2Pay,
+        statHolidays: runPreview.statEligible.map(r => ({
+          name: r.name,
+          date: r.date,
+          avgDayPay: r.avgDayPay,
+          premiumPay: r.premiumPay,
+          totalPay: r.totalPay,
+          hoursOnHoliday: r.hoursOnHoliday || 0
+        })),
+        statPayTotal: runPreview.statPayTotal,
+        grossPay: runPreview.grossPay,
+        cpp: runPreview.ded.cpp,
+        cpp2: runPreview.ded.cpp2,
+        ei: runPreview.ded.ei,
+        incomeTax: runPreview.incomeTax,
+        netPay: runPreview.netPay,
+        createdAt: today(),
+        notes: runNotes.trim()
+      };
+      setPayrollRuns([...payrollRuns, rec]);
+      setRunPeriodStart("");
+      setRunPeriodEnd("");
+      setRunIncomeTax("");
+      setRunNotes("");
+      alert("Payroll run saved for " + runEmployee.name + ".");
+    };
+    const deleteRun = id => {
+      if (window.confirm("Delete this payroll run? This can't be undone.")) setPayrollRuns(payrollRuns.filter(r => r.id !== id));
+    };
+    const sortedRuns = [...payrollRuns].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
+    const yearsWithRuns = Array.from(new Set(payrollRuns.map(r => r.periodEnd.slice(0, 4))));
+    const t4YearOptions = Array.from(new Set([...yearsWithRuns, String(new Date().getFullYear())])).sort().reverse();
+    const t4Runs = payrollRuns.filter(r => r.periodEnd.slice(0, 4) === t4Year && (!t4StaffId || String(r.staffId) === String(t4StaffId)));
+    const t4ByStaff = {};
+    t4Runs.forEach(r => {
+      if (!t4ByStaff[r.staffId]) t4ByStaff[r.staffId] = {
+        staffId: r.staffId,
+        staffName: r.staffName,
+        box14: 0,
+        box16: 0,
+        box16A: 0,
+        box18: 0,
+        box22: 0
+      };
+      const row = t4ByStaff[r.staffId];
+      row.box14 += r.grossPay;
+      row.box16 += r.cpp || 0;
+      row.box16A += r.cpp2 || 0;
+      row.box18 += r.ei || 0;
+      row.box22 += r.incomeTax || 0;
+    });
+    const t4Rows = Object.values(t4ByStaff).sort((a, b) => a.staffName.localeCompare(b.staffName));
+    const remitByMonth = {};
+    payrollRuns.forEach(r => {
+      const mk = mKey(r.periodEnd);
+      if (!remitByMonth[mk]) remitByMonth[mk] = {
+        month: mk,
+        grossPay: 0,
+        empCPP: 0,
+        empEI: 0,
+        incomeTax: 0
+      };
+      const row = remitByMonth[mk];
+      row.grossPay += r.grossPay;
+      row.empCPP += (r.cpp || 0) + (r.cpp2 || 0);
+      row.empEI += r.ei || 0;
+      row.incomeTax += r.incomeTax || 0;
+    });
+    const remitRows = Object.values(remitByMonth).sort((a, b) => a.month.localeCompare(b.month)).map(row => {
+      const employerCPP = row.empCPP;
+      const employerEI = row.empEI * 1.4;
+      const total = row.empCPP + employerCPP + row.empEI + employerEI + row.incomeTax;
+      const [y, m] = row.month.split("-").map(Number);
+      const dueDate = bcDstr(new Date(y, m, 15));
+      return {
+        ...row,
+        employerCPP,
+        employerEI,
+        total,
+        dueDate
+      };
+    });
+    const quarterOfMonth = m => Math.floor((m - 1) / 3) + 1;
+    const wsbcByQuarter = {};
+    const cumByStaffYear = {};
+    const cap = parseFloat(wsbc.maxAssessableEarnings) || DEFAULT_SETTINGS.workSafeBC.maxAssessableEarnings;
+    [...payrollRuns].sort((a, b) => a.periodEnd.localeCompare(b.periodEnd)).forEach(r => {
+      const [y, m] = r.periodEnd.split("-").map(Number);
+      const q = quarterOfMonth(m);
+      const qKey = y + "-Q" + q;
+      const cumKey = r.staffId + "-" + y;
+      const before = cumByStaffYear[cumKey] || 0;
+      const after = before + r.grossPay;
+      const assessable = Math.max(0, Math.min(after, cap) - Math.min(before, cap));
+      cumByStaffYear[cumKey] = after;
+      if (!wsbcByQuarter[qKey]) wsbcByQuarter[qKey] = {
+        key: qKey,
+        year: y,
+        quarter: q,
+        assessablePayroll: 0
+      };
+      wsbcByQuarter[qKey].assessablePayroll += assessable;
+    });
+    const WSBC_DUE = {
+      1: "Apr 20",
+      2: "Jul 20",
+      3: "Oct 20",
+      4: "Jan 20 (following year)"
+    };
+    const wsbcRows = Object.values(wsbcByQuarter).sort((a, b) => a.key.localeCompare(b.key)).map(row => ({
+      ...row,
+      premium: row.assessablePayroll * ((parseFloat(wsbc.rate) || 0) / 100),
+      dueLabel: WSBC_DUE[row.quarter]
+    }));
+    const roeEmployee = staff.find(s => String(s.id) === String(roeStaffId));
+    let roePrep = null;
+    if (roeEmployee && roeLastDay) {
+      const windowStart = new Date(roeLastDay + "T00:00:00");
+      windowStart.setDate(windowStart.getDate() - 364);
+      const windowStartStr = bcDstr(windowStart);
+      const empStart = roeEmployee.startDate && roeEmployee.startDate > windowStartStr ? roeEmployee.startDate : windowStartStr;
+      const relevantRuns = payrollRuns.filter(r => r.staffId === roeEmployee.id && r.periodEnd >= empStart && r.periodEnd <= roeLastDay);
+      const insurableEarnings = relevantRuns.reduce((s, r) => s + r.grossPay, 0);
+      const insurableHours = relevantRuns.reduce((s, r) => s + r.regularHours + r.ot15Hours + r.ot2Hours + (r.statHolidays || []).reduce((ss, h) => ss + (h.hoursOnHoliday || 0), 0), 0);
+      roePrep = {
+        windowStartUsed: empStart,
+        insurableEarnings,
+        insurableHours,
+        payPeriodsUsed: relevantRuns.length
+      };
+    }
+
+    // -- Compliance calendar --
+    const [fyM, fyD] = (settings.business?.fiscalYearEnd || "12-31").split("-").map(Number);
+    const addMonthsClamped = (d, months) => {
+      const nd = new Date(d);
+      nd.setMonth(nd.getMonth() + months);
+      return nd;
+    };
+    const nowD = new Date();
+    nowD.setHours(0, 0, 0, 0);
+    const calendarItems = [];
+    // GST/HST
+    {
+      const fyEndThis = new Date(nowD.getFullYear(), fyM - 1, fyD);
+      if (compliance.gstFilingFrequency === "Annual") {
+        let anchor = fyEndThis < nowD ? new Date(nowD.getFullYear() + 1, fyM - 1, fyD) : fyEndThis;
+        let due = addMonthsClamped(anchor, 3);
+        if (due < nowD) due = addMonthsClamped(new Date(nowD.getFullYear() + 1, fyM - 1, fyD), 3);
+        calendarItems.push({
+          label: "GST/HST return (Annual)",
+          date: due
+        });
+      } else if (compliance.gstFilingFrequency === "Quarterly") {
+        const qEndMonths = [2, 5, 8, 11];
+        let due = null;
+        for (const qm of qEndMonths) {
+          const qe = new Date(nowD.getFullYear(), qm + 1, 0);
+          const d = addMonthsClamped(qe, 1);
+          if (d >= nowD) {
+            due = d;
+            break;
+          }
+        }
+        if (!due) {
+          const qe = new Date(nowD.getFullYear() + 1, 2, 0);
+          due = addMonthsClamped(qe, 1);
+        }
+        calendarItems.push({
+          label: "GST/HST return (Quarterly)",
+          date: due
+        });
+      } else {
+        const me = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0);
+        calendarItems.push({
+          label: "GST/HST return (Monthly)",
+          date: addMonthsClamped(me, 1)
+        });
+      }
+    }
+    // BC PST
+    {
+      const freq = compliance.pstFilingFrequency;
+      const periodEndPlusMonth = (pe, n) => new Date(pe.getFullYear(), pe.getMonth() + n, pe.getDate());
+      if (freq === "Monthly") {
+        const me = new Date(nowD.getFullYear(), nowD.getMonth() + 1, 0);
+        calendarItems.push({
+          label: "BC PST return (Monthly)",
+          date: periodEndPlusMonth(me, 1)
+        });
+      } else if (freq === "Quarterly") {
+        const qEndMonths = [2, 5, 8, 11];
+        let due = null;
+        for (const qm of qEndMonths) {
+          const qe = new Date(nowD.getFullYear(), qm + 1, 0);
+          const d = periodEndPlusMonth(qe, 1);
+          if (d >= nowD) {
+            due = d;
+            break;
+          }
+        }
+        if (!due) {
+          const qe = new Date(nowD.getFullYear() + 1, 2, 0);
+          due = periodEndPlusMonth(qe, 1);
+        }
+        calendarItems.push({
+          label: "BC PST return (Quarterly)",
+          date: due
+        });
+      } else if (freq === "Semi-Annually") {
+        const ends = [5, 11];
+        let due = null;
+        for (const em of ends) {
+          const pe = new Date(nowD.getFullYear(), em + 1, 0);
+          const d = periodEndPlusMonth(pe, 1);
+          if (d >= nowD) {
+            due = d;
+            break;
+          }
+        }
+        if (!due) {
+          const pe = new Date(nowD.getFullYear() + 1, 5, 0);
+          due = periodEndPlusMonth(pe, 1);
+        }
+        calendarItems.push({
+          label: "BC PST return (Semi-Annual)",
+          date: due
+        });
+      } else {
+        const pe = new Date(nowD.getFullYear(), 11, 31);
+        let due = periodEndPlusMonth(pe, 3);
+        if (due < nowD) {
+          const pe2 = new Date(nowD.getFullYear() + 1, 11, 31);
+          due = periodEndPlusMonth(pe2, 3);
+        }
+        calendarItems.push({
+          label: "BC PST return (Annual)",
+          date: due
+        });
+      }
+    }
+    // T4 (last day of Feb)
+    {
+      let due = new Date(nowD.getFullYear(), 1, new Date(nowD.getFullYear(), 2, 0).getDate());
+      if (due < nowD) due = new Date(nowD.getFullYear() + 1, 1, new Date(nowD.getFullYear() + 1, 2, 0).getDate());
+      calendarItems.push({
+        label: "T4 slips + summary filing",
+        date: due
+      });
+    }
+    // WorkSafeBC quarterly reports
+    [[3, 20], [6, 20], [9, 20]].forEach(([m, d]) => {
+      let due = new Date(nowD.getFullYear(), m, d);
+      if (due < nowD) due = new Date(nowD.getFullYear() + 1, m, d);
+      calendarItems.push({
+        label: "WorkSafeBC quarterly report",
+        date: due
+      });
+    });
+    {
+      let due = new Date(nowD.getFullYear() + 1, 0, 20);
+      calendarItems.push({
+        label: "WorkSafeBC quarterly report",
+        date: due
+      });
+    }
+    // WorkSafeBC annual reconciliation
+    {
+      let due = new Date(nowD.getFullYear(), 1, new Date(nowD.getFullYear(), 2, 0).getDate());
+      if (due < nowD) due = new Date(nowD.getFullYear() + 1, 1, new Date(nowD.getFullYear() + 1, 2, 0).getDate());
+      calendarItems.push({
+        label: "WorkSafeBC annual payroll reconciliation",
+        date: due
+      });
+    }
+    // BC Corporate Annual Report
+    if (compliance.incorporationDate) {
+      const [iy, im, id] = compliance.incorporationDate.split("-").map(Number);
+      let anniv = new Date(nowD.getFullYear(), im - 1, id);
+      let due = addMonthsClamped(anniv, 2);
+      if (due < nowD) {
+        anniv = new Date(nowD.getFullYear() + 1, im - 1, id);
+        due = addMonthsClamped(anniv, 2);
+      }
+      calendarItems.push({
+        label: "BC Corporate Annual Report",
+        date: due
+      });
+    }
+    // Custom items
+    (compliance.customItems || []).forEach(item => {
+      if (!item.dueDate) return;
+      let due = new Date(item.dueDate + "T00:00:00");
+      if (item.recurring === "yearly") {
+        while (due < nowD) due = new Date(due.getFullYear() + 1, due.getMonth(), due.getDate());
+      } else if (item.recurring === "monthly") {
+        while (due < nowD) due = new Date(due.getFullYear(), due.getMonth() + 1, due.getDate());
+      }
+      calendarItems.push({
+        label: item.label,
+        date: due,
+        custom: true,
+        id: item.id
+      });
+    });
+    calendarItems.forEach(it => {
+      it.daysUntil = Math.round((it.date - nowD) / 86400000);
+    });
+    calendarItems.sort((a, b) => a.daysUntil - b.daysUntil);
+    const urgencyColor = days => days <= 7 ? C.red : days <= 30 ? C.orange : C.green;
+    const removeCustomItem = id => setSettings({
+      ...settings,
+      compliance: {
+        ...compliance,
+        customItems: (compliance.customItems || []).filter(c => c.id !== id)
+      }
+    });
+    const addCustomItem = () => {
+      if (!calLabel.trim() || !calDate) return;
+      setSettings({
+        ...settings,
+        compliance: {
+          ...compliance,
+          customItems: [...(compliance.customItems || []), {
+            id: Date.now(),
+            label: calLabel.trim(),
+            dueDate: calDate,
+            recurring: calRecurring
+          }]
+        }
+      });
+      setCalLabel("");
+      setCalDate("");
+    };
+    const SUBTABS = [["run", "Run Payroll"], ["history", "History (" + payrollRuns.length + ")"], ["t4", "T4 / YTD"], ["remittance", "CRA Remittance"], ["wsbc", "WorkSafeBC"], ["roe", "ROE Prep"], ["calendar", "Compliance Calendar"]];
+    return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#E8F5E9",
+        border: "1px solid " + C.green,
+        borderRadius: 8,
+        padding: "10px 14px",
+        marginBottom: 16,
+        fontSize: 12,
+        color: C.charcoal
+      }
+    }, "This suite calculates real BC Employment Standards Act overtime and statutory holiday pay from your team's actual clocked hours, and helps you keep the records CRA, WorkSafeBC, and BC Corporate Registry expect — all so you can stay self-sufficient. It does ", /*#__PURE__*/React.createElement("strong", null, "not"), " replace CRA's own free tools: run every real pay through ", /*#__PURE__*/React.createElement("strong", null, "CRA's PDOC calculator"), " for exact tax withholding, file T4s through ", /*#__PURE__*/React.createElement("strong", null, "CRA's My Business Account / Web Forms"), ", and issue ROEs through ", /*#__PURE__*/React.createElement("strong", null, "Service Canada's ROE Web"), " — all free. This app prepares the numbers so those take minutes, not hours."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginBottom: 16,
+        flexWrap: "wrap"
+      }
+    }, SUBTABS.map(([key, label]) => /*#__PURE__*/React.createElement(Btn, {
+      key: key,
+      small: true,
+      onClick: () => setPayrollSubView(key),
+      color: payrollSubView === key ? C.teal : C.charcoal,
+      outline: payrollSubView !== key
+    }, label))), payrollSubView === "run" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement(SH, null, "Run Payroll for a Pay Period"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1.5fr 1fr 1fr",
+        gap: 10,
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Staff Member"), /*#__PURE__*/React.createElement("select", {
+      value: runStaffId,
+      onChange: e => setRunStaffId(e.target.value),
+      style: {
+        width: "100%",
+        padding: "8px 10px",
+        border: "1px solid " + C.border,
+        borderRadius: 6,
+        fontSize: 14,
+        background: C.white,
+        fontFamily: "inherit"
+      }
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Select..."), staff.filter(s => s.type !== "Owner").map(s => /*#__PURE__*/React.createElement("option", {
+      key: s.id,
+      value: s.id
+    }, s.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Period Start"), /*#__PURE__*/React.createElement(Inp, {
+      type: "date",
+      value: runPeriodStart,
+      onChange: setRunPeriodStart
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Period End"), /*#__PURE__*/React.createElement(Inp, {
+      type: "date",
+      value: runPeriodEnd,
+      onChange: setRunPeriodEnd
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 2fr",
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Income Tax to Withhold ($, from CRA PDOC)"), /*#__PURE__*/React.createElement(Inp, {
+      type: "number",
+      value: runIncomeTax,
+      onChange: setRunIncomeTax,
+      placeholder: "0.00"
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Notes (optional)"), /*#__PURE__*/React.createElement(Inp, {
+      value: runNotes,
+      onChange: setRunNotes,
+      placeholder: "e.g. included pro-rated raise"
+    })))), runEmployee && !runPreview && /*#__PURE__*/React.createElement("div", {
+      style: {
+        color: C.gray,
+        fontSize: 13,
+        textAlign: "center",
+        padding: 20
+      }
+    }, "Pick a valid start and end date to see the calculation."), runPreview && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      ref: runRef
+    }, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        marginBottom: 16,
+        border: "2px solid " + C.gold
+      }
+    }, /*#__PURE__*/React.createElement(SH, null, "Payroll Calculation — ", runEmployee.name, " (", runPeriodStart, " to ", runPeriodEnd, ")"), /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 13,
+        marginBottom: 12
+      }
+    }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0"
+      }
+    }, "Regular hours"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right"
+      }
+    }, runPreview.ot.regularHours.toFixed(2), " hrs"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right",
+        fontWeight: 700
+      }
+    }, fmt(runPreview.ot.regularPay))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0"
+      }
+    }, "Overtime @ 1.5x"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right"
+      }
+    }, runPreview.ot.ot15Hours.toFixed(2), " hrs"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right",
+        fontWeight: 700
+      }
+    }, fmt(runPreview.ot.ot15Pay))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0"
+      }
+    }, "Overtime @ 2x"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right"
+      }
+    }, runPreview.ot.ot2Hours.toFixed(2), " hrs"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right",
+        fontWeight: 700
+      }
+    }, fmt(runPreview.ot.ot2Pay))), runPreview.statResults.map(r => /*#__PURE__*/React.createElement("tr", {
+      key: r.name
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0"
+      }
+    }, "Stat holiday — ", r.name, " (", r.date, ")", !r.eligible && /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.gray,
+        fontSize: 11
+      }
+    }, " — not yet eligible (needs 30 days employed + worked 15 of last 30 days)")), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right"
+      }
+    }, r.eligible && r.workedHoliday ? r.hoursOnHoliday.toFixed(2) + " hrs worked" : ""), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right",
+        fontWeight: 700
+      }
+    }, r.eligible ? fmt(r.totalPay) : "$0.00"))), /*#__PURE__*/React.createElement("tr", {
+      style: {
+        borderTop: "2px solid " + C.charcoal
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 0",
+        fontWeight: 700
+      }
+    }, "GROSS PAY"), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 0",
+        textAlign: "right",
+        fontWeight: 700,
+        fontSize: 15
+      }
+    }, fmt(runPreview.grossPay))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        color: C.red
+      }
+    }, "CPP"), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right",
+        color: C.red
+      }
+    }, "-", fmt(runPreview.ded.cpp))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        color: C.red
+      }
+    }, "CPP2"), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right",
+        color: C.red
+      }
+    }, "-", fmt(runPreview.ded.cpp2))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        color: C.red
+      }
+    }, "EI"), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right",
+        color: C.red
+      }
+    }, "-", fmt(runPreview.ded.ei))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        color: C.red
+      }
+    }, "Income Tax (manual, from CRA PDOC)"), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "4px 0",
+        textAlign: "right",
+        color: C.red
+      }
+    }, "-", fmt(runPreview.incomeTax))), /*#__PURE__*/React.createElement("tr", {
+      style: {
+        borderTop: "2px solid " + C.charcoal
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 0",
+        fontWeight: 700,
+        color: C.green
+      }
+    }, "NET PAY"), /*#__PURE__*/React.createElement("td", null), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 0",
+        textAlign: "right",
+        fontWeight: 700,
+        fontSize: 16,
+        color: C.green
+      }
+    }, fmt(runPreview.netPay))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.gray
+      }
+    }, "CPP/CPP2/EI here are estimates using this year's published rates — confirm exact withholding with CRA's PDOC calculator before paying."))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      onClick: saveRun,
+      color: C.green
+    }, "Save This Payroll Run"), /*#__PURE__*/React.createElement(Btn, {
+      onClick: () => printSection("Payroll — " + runEmployee.name, runRef.current.innerHTML),
+      color: C.blue,
+      outline: true
+    }, "Download PDF")))), payrollSubView === "history" && /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 0,
+        overflow: "hidden"
+      }
+    }, /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 12
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: C.green
+      }
+    }, ["Period", "Staff", "Reg Hrs", "OT1.5", "OT2", "Stat Pay", "Gross", "CPP+CPP2", "EI", "Tax", "Net", ""].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: {
+        color: C.white,
+        padding: "7px 9px",
+        textAlign: "left"
+      }
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, sortedRuns.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 12,
+      style: {
+        padding: 20,
+        textAlign: "center",
+        color: C.gray
+      }
+    }, "No payroll runs saved yet — use \"Run Payroll\" to create one.")) : sortedRuns.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+      key: r.id,
+      style: {
+        background: i % 2 === 0 ? C.white : C.cream,
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, r.periodStart, " → ", r.periodEnd), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px",
+        fontWeight: 700
+      }
+    }, r.staffName), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, r.regularHours.toFixed(1)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, r.ot15Hours.toFixed(1)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, r.ot2Hours.toFixed(1)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, fmt(r.statPayTotal || 0)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px",
+        fontWeight: 700
+      }
+    }, fmt(r.grossPay)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, fmt((r.cpp || 0) + (r.cpp2 || 0))), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, fmt(r.ei || 0)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, fmt(r.incomeTax || 0)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px",
+        fontWeight: 700,
+        color: C.green
+      }
+    }, fmt(r.netPay)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => deleteRun(r.id),
+      color: C.red,
+      outline: true
+    }, "Delete"))))))), payrollSubView === "t4" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 10,
+        marginBottom: 14,
+        alignItems: "end"
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Year"), /*#__PURE__*/React.createElement(Sel, {
+      value: t4Year,
+      onChange: setT4Year,
+      options: t4YearOptions
+    })), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1
+      }
+    }, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Employee (optional filter)"), /*#__PURE__*/React.createElement("select", {
+      value: t4StaffId,
+      onChange: e => setT4StaffId(e.target.value),
+      style: {
+        width: "100%",
+        padding: "8px 10px",
+        border: "1px solid " + C.border,
+        borderRadius: 6,
+        fontSize: 14,
+        background: C.white,
+        fontFamily: "inherit"
+      }
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "All employees"), staff.filter(s => s.type !== "Owner").map(s => /*#__PURE__*/React.createElement("option", {
+      key: s.id,
+      value: s.id
+    }, s.name)))), /*#__PURE__*/React.createElement(Btn, {
+      onClick: () => printSection("T4 YTD Summary " + t4Year, t4Ref.current.innerHTML),
+      color: C.blue,
+      outline: true
+    }, "Download PDF")), /*#__PURE__*/React.createElement("div", {
+      ref: t4Ref
+    }, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 0,
+        overflow: "hidden"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "10px 14px",
+        background: C.lightGold,
+        fontWeight: 700
+      }
+    }, "T4 / Year-to-Date Summary — ", t4Year), /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: C.green
+      }
+    }, ["Employee", "Box 14 (Employment Income)", "Box 16 (CPP)", "Box 16A (CPP2)", "Box 18 (EI)", "Box 22 (Income Tax)"].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: {
+        color: C.white,
+        padding: "8px 10px",
+        textAlign: "left"
+      }
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, t4Rows.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 6,
+      style: {
+        padding: 20,
+        textAlign: "center",
+        color: C.gray
+      }
+    }, "No payroll runs recorded for ", t4Year, " yet.")) : t4Rows.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+      key: r.staffId,
+      style: {
+        background: i % 2 === 0 ? C.white : C.cream,
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px",
+        fontWeight: 700
+      }
+    }, r.staffName), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px"
+      }
+    }, fmt(r.box14)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px"
+      }
+    }, fmt(r.box16)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px"
+      }
+    }, fmt(r.box16A)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px"
+      }
+    }, fmt(r.box18)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px"
+      }
+    }, fmt(r.box22)))))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.gray,
+        marginTop: 8
+      }
+    }, "Feed these totals into CRA's free T4 Web Forms (My Business Account) by Feb 28. This is a record-keeping aid, not a filing — the actual T4 slip has more boxes (province of employment, EI insurable earnings, pensionable earnings, etc.) that Web Forms will walk you through.")), payrollSubView === "remittance" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "flex-end",
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      onClick: () => printSection("CRA Remittance Summary", remitRef.current.innerHTML),
+      color: C.blue,
+      outline: true
+    }, "Download PDF")), /*#__PURE__*/React.createElement("div", {
+      ref: remitRef
+    }, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 0,
+        overflow: "hidden"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "10px 14px",
+        background: C.lightGold,
+        fontWeight: 700
+      }
+    }, "CRA Payroll Remittance Summary — by Month"), /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 12
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: C.green
+      }
+    }, ["Month", "Gross Payroll", "Employee CPP+CPP2", "Employer CPP+CPP2 (match)", "Employee EI", "Employer EI (1.4x)", "Income Tax Withheld", "Total Remittance", "Due Date"].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: {
+        color: C.white,
+        padding: "7px 9px",
+        textAlign: "left"
+      }
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, remitRows.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 9,
+      style: {
+        padding: 20,
+        textAlign: "center",
+        color: C.gray
+      }
+    }, "No payroll runs recorded yet.")) : remitRows.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+      key: r.month,
+      style: {
+        background: i % 2 === 0 ? C.white : C.cream,
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px",
+        fontWeight: 700
+      }
+    }, MONTHS[parseInt(r.month.slice(5, 7)) - 1], " ", r.month.slice(0, 4)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, fmt(r.grossPay)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, fmt(r.empCPP)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, fmt(r.employerCPP)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, fmt(r.empEI)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, fmt(r.employerEI)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, fmt(r.incomeTax)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px",
+        fontWeight: 700
+      }
+    }, fmt(r.total)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "6px 9px"
+      }
+    }, r.dueDate))))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.gray,
+        marginTop: 8
+      }
+    }, "Due dates shown assume you're a \"regular\" remitter (15th of the following month). If you're a new small employer averaging under $1,000/month in withholding, CRA may allow quarterly remittance instead (due the 15th after each quarter) — check your CRA My Business Account to confirm which you're assigned, and set it in Settings. Always remit through CRA My Business Account, not this app.")), payrollSubView === "wsbc" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "flex-end",
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement(Btn, {
+      onClick: () => printSection("WorkSafeBC Quarterly Premium Report", wsbcRef.current.innerHTML),
+      color: C.blue,
+      outline: true
+    }, "Download PDF")), /*#__PURE__*/React.createElement("div", {
+      ref: wsbcRef
+    }, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 0,
+        overflow: "hidden"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "10px 14px",
+        background: C.lightGold,
+        fontWeight: 700
+      }
+    }, "WorkSafeBC Assessable Payroll — by Quarter"), /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: C.green
+      }
+    }, ["Quarter", "Assessable Payroll", "Rate", "Estimated Premium", "Reporting Due"].map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: {
+        color: C.white,
+        padding: "8px 10px",
+        textAlign: "left"
+      }
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, wsbcRows.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 5,
+      style: {
+        padding: 20,
+        textAlign: "center",
+        color: C.gray
+      }
+    }, "No payroll runs recorded yet.")) : wsbcRows.map((r, i) => /*#__PURE__*/React.createElement("tr", {
+      key: r.key,
+      style: {
+        background: i % 2 === 0 ? C.white : C.cream,
+        borderBottom: "1px solid " + C.border
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px",
+        fontWeight: 700
+      }
+    }, "Q", r.quarter, " ", r.year), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px"
+      }
+    }, fmt(r.assessablePayroll)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px"
+      }
+    }, wsbc.rate || "--", "%"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px",
+        fontWeight: 700
+      }
+    }, fmt(r.premium)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 10px"
+      }
+    }, r.dueLabel))))))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.gray,
+        marginTop: 8
+      }
+    }, "Assessable payroll is capped per worker per year at $", cap.toLocaleString(), " (set in Settings — confirm this year's actual maximum on your WorkSafeBC account, it changes annually). File and pay the real amount through your WorkSafeBC online account; this is your own working record.")), payrollSubView === "roe" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement(SH, null, "Record of Employment — Prep Sheet"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1.5fr 1fr 1.5fr",
+        gap: 10,
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Employee"), /*#__PURE__*/React.createElement("select", {
+      value: roeStaffId,
+      onChange: e => setRoeStaffId(e.target.value),
+      style: {
+        width: "100%",
+        padding: "8px 10px",
+        border: "1px solid " + C.border,
+        borderRadius: 6,
+        fontSize: 14,
+        background: C.white,
+        fontFamily: "inherit"
+      }
+    }, /*#__PURE__*/React.createElement("option", {
+      value: ""
+    }, "Select..."), staff.filter(s => s.type !== "Owner").map(s => /*#__PURE__*/React.createElement("option", {
+      key: s.id,
+      value: s.id
+    }, s.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Last Day Worked"), /*#__PURE__*/React.createElement(Inp, {
+      type: "date",
+      value: roeLastDay,
+      onChange: setRoeLastDay
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Reason for Issuing (Block 16)"), /*#__PURE__*/React.createElement("select", {
+      value: roeReasonCode,
+      onChange: e => setRoeReasonCode(e.target.value),
+      style: {
+        width: "100%",
+        padding: "8px 10px",
+        border: "1px solid " + C.border,
+        borderRadius: 6,
+        fontSize: 13,
+        background: C.white,
+        fontFamily: "inherit"
+      }
+    }, Object.entries(ROE_REASON_CODES).map(([code, label]) => /*#__PURE__*/React.createElement("option", {
+      key: code,
+      value: code
+    }, code, " — ", label))))), /*#__PURE__*/React.createElement(Inp, {
+      value: roeReasonNote,
+      onChange: setRoeReasonNote,
+      placeholder: "Additional note for your own file (optional)"
+    })), roePrep && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      ref: roeRef
+    }, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        border: "2px solid " + C.gold,
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement(SH, null, "ROE Prep — ", roeEmployee.name), /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("tbody", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "5px 0"
+      }
+    }, "Last day worked"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "5px 0",
+        textAlign: "right",
+        fontWeight: 700
+      }
+    }, roeLastDay)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "5px 0"
+      }
+    }, "Reason for issuing"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "5px 0",
+        textAlign: "right",
+        fontWeight: 700
+      }
+    }, roeReasonCode, " — ", ROE_REASON_CODES[roeReasonCode])), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "5px 0"
+      }
+    }, "Insurable earnings window used"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "5px 0",
+        textAlign: "right"
+      }
+    }, roePrep.windowStartUsed, " to ", roeLastDay)), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "5px 0"
+      }
+    }, "Pay periods included"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "5px 0",
+        textAlign: "right"
+      }
+    }, roePrep.payPeriodsUsed)), /*#__PURE__*/React.createElement("tr", {
+      style: {
+        borderTop: "2px solid " + C.charcoal
+      }
+    }, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 0",
+        fontWeight: 700
+      }
+    }, "Total insurable hours"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 0",
+        textAlign: "right",
+        fontWeight: 700,
+        fontSize: 15
+      }
+    }, roePrep.insurableHours.toFixed(1))), /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 0",
+        fontWeight: 700
+      }
+    }, "Total insurable earnings"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 0",
+        textAlign: "right",
+        fontWeight: 700,
+        fontSize: 15
+      }
+    }, fmt(roePrep.insurableEarnings))), roeReasonNote && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "5px 0"
+      }
+    }, "Note"), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "5px 0",
+        textAlign: "right"
+      }
+    }, roeReasonNote)))))), /*#__PURE__*/React.createElement(Btn, {
+      onClick: () => printSection("ROE Prep — " + roeEmployee.name, roeRef.current.innerHTML),
+      color: C.blue,
+      outline: true
+    }, "Download PDF")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.gray,
+        marginTop: 8
+      }
+    }, "This is preparation data only, pulled from your saved payroll runs (going back up to 52 weeks or the employee's start date) — it is not an actual ROE filing. Issue the real ROE, free, through Service Canada's ROE Web within 5 calendar days of the interruption of earnings.")), payrollSubView === "calendar" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement(Card, {
+      style: {
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement(SH, null, "Your Filing Settings"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr 1fr 1fr",
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "GST/HST Filing Frequency"), /*#__PURE__*/React.createElement(Sel, {
+      value: compliance.gstFilingFrequency,
+      onChange: v => setSettings({
+        ...settings,
+        compliance: {
+          ...compliance,
+          gstFilingFrequency: v
+        }
+      }),
+      options: ["Annual", "Quarterly", "Monthly"]
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "BC PST Filing Frequency"), /*#__PURE__*/React.createElement(Sel, {
+      value: compliance.pstFilingFrequency,
+      onChange: v => setSettings({
+        ...settings,
+        compliance: {
+          ...compliance,
+          pstFilingFrequency: v
+        }
+      }),
+      options: ["Monthly", "Quarterly", "Semi-Annually", "Annually"]
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Fiscal Year End (MM-DD)"), /*#__PURE__*/React.createElement(Inp, {
+      value: settings.business?.fiscalYearEnd || "12-31",
+      onChange: v => setSettings({
+        ...settings,
+        business: {
+          ...settings.business,
+          fiscalYearEnd: v
+        }
+      }),
+      placeholder: "12-31"
+    })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        display: "block",
+        marginBottom: 4
+      }
+    }, "Incorporation Date"), /*#__PURE__*/React.createElement(Inp, {
+      type: "date",
+      value: compliance.incorporationDate,
+      onChange: v => setSettings({
+        ...settings,
+        compliance: {
+          ...compliance,
+          incorporationDate: v
+        }
+      })
+    }))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.gray,
+        marginTop: 8
+      }
+    }, "These come from CRA/BC — check your CRA My Business Account and BC's Consumer Taxes portal for what you were actually assigned; these settings just drive the calendar below.")), /*#__PURE__*/React.createElement(Card, {
+      style: {
+        padding: 0,
+        overflow: "hidden",
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        padding: "10px 14px",
+        background: C.lightGold,
+        fontWeight: 700
+      }
+    }, "Upcoming Deadlines"), calendarItems.map((it, i) => /*#__PURE__*/React.createElement("div", {
+      key: i,
+      style: {
+        padding: "10px 14px",
+        borderBottom: "1px solid " + C.border,
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 700
+      }
+    }, it.label), /*#__PURE__*/React.createElement("span", {
+      style: {
+        color: C.gray,
+        fontSize: 12,
+        marginLeft: 8
+      }
+    }, bcDstr(it.date))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        alignItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement(Badge, {
+      color: urgencyColor(it.daysUntil)
+    }, it.daysUntil < 0 ? Math.abs(it.daysUntil) + "d overdue" : it.daysUntil === 0 ? "Due today" : it.daysUntil + "d away"), it.custom && /*#__PURE__*/React.createElement(Btn, {
+      small: true,
+      onClick: () => removeCustomItem(it.id),
+      color: C.red,
+      outline: true
+    }, "Remove"))))), /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "Add Your Own Reminder"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "2fr 1fr 1fr auto",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement(Inp, {
+      value: calLabel,
+      onChange: setCalLabel,
+      placeholder: "e.g. Business license renewal"
+    }), /*#__PURE__*/React.createElement(Inp, {
+      type: "date",
+      value: calDate,
+      onChange: setCalDate
+    }), /*#__PURE__*/React.createElement(Sel, {
+      value: calRecurring,
+      onChange: setCalRecurring,
+      options: ["yearly", "monthly", "none"]
+    }), /*#__PURE__*/React.createElement(Btn, {
+      onClick: addCustomItem,
+      color: C.green
+    }, "+ Add")))));
+  })(), staffView === "directory" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "repeat(4,1fr)",
@@ -7705,8 +9326,8 @@ function StaffTab({
     style: {
       background: C.green
     }
-  }, ["", "Name", "Position", "Status", "Rate", payPeriod + " Gross", ""].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
+  }, ["", "Name", "Position", "Status", "Rate", payPeriod + " Gross", ""].map((h, hi) => /*#__PURE__*/React.createElement("th", {
+    key: hi,
     style: {
       color: C.white,
       padding: "9px 12px",
@@ -11839,6 +13460,10 @@ function ReportsTab({
     tax: "Tax Summary",
     variance: "Inventory Variance"
   };
+  // What a sale actually earned, net of any discount/comp and excluding
+  // sales tax (GST/PST collected isn't income — it's held for the government).
+  // Shared by the Income Statement and the Tax Summary below so both agree.
+  const netRevenueOf = sale => sale.discountedSub != null ? sale.discountedSub : Math.max(0, (sale.subtotal || 0) - (sale.discountAmt || 0));
 
   // -- INCOME STATEMENT (own month picker — a proper statement is always a
   // clean calendar period, not an arbitrary date range) -------------------
@@ -11853,7 +13478,7 @@ function ReportsTab({
   const stmtSales = paidSales.filter(s => stmtInRange(s.settledDate || s.date));
   // Revenue = what was actually charged, net of discounts/comps, excluding
   // sales tax collected on the government's behalf (not the business's income).
-  const stmtGrossRevenue = stmtSales.reduce((s, x) => s + (x.discountedSub != null ? x.discountedSub : Math.max(0, (x.subtotal || 0) - (x.discountAmt || 0))), 0);
+  const stmtGrossRevenue = stmtSales.reduce((s, x) => s + netRevenueOf(x), 0);
   const stmtRefunds = (refunds || []).filter(r => stmtInRange(r.date));
   const stmtRefundTotal = stmtRefunds.reduce((s, r) => s + (r.amount || 0), 0);
   const stmtNetRevenue = stmtGrossRevenue - stmtRefundTotal;
@@ -12954,49 +14579,96 @@ function ReportsTab({
   }))))), view === "expenses" && /*#__PURE__*/React.createElement(ExpenseTrendsView, {
     expenses: expenses,
     settings: settings
-  }), view === "tax" && /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "CRA Tax Summary"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: "#E3F2FD",
-      border: "1px solid #1976D2",
-      borderRadius: 8,
-      padding: "10px 14px",
-      marginBottom: 14,
-      fontSize: 13
-    }
-  }, "File GST/HST quarterly. PST remitted to BC separately. Keep all receipts for Input Tax Credits. Verify with your accountant before filing."), /*#__PURE__*/React.createElement("table", {
-    style: {
-      width: "100%",
-      borderCollapse: "collapse",
-      fontSize: 13
-    }
-  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
-    style: {
-      background: C.green
-    }
-  }, ["Month", "Revenue", "GST Collected", "PST Collected", "Expenses", "GST ITC Est.", "Net GST Owing"].map(h => /*#__PURE__*/React.createElement("th", {
-    key: h,
-    style: {
-      color: C.white,
-      padding: "9px 12px",
-      textAlign: "left",
-      fontSize: 12
-    }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, allMonths.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 7,
-    style: {
-      padding: 20,
-      textAlign: "center",
-      color: C.charcoal
-    }
-  }, "No sales data yet.")) : allMonths.map((m, i) => {
-    const sl = sales.filter(s => s.date.startsWith(m));
-    const exp = mExp[m] || 0;
-    const gstC = sl.reduce((s, x) => s + x.gst, 0);
-    const pstC = sl.reduce((s, x) => s + x.pst, 0);
-    const gstP = exp * 0.05;
-    const netGST = gstC - gstP;
-    return /*#__PURE__*/React.createElement("tr", {
-      key: m,
+  }), view === "tax" && (() => {
+    // Cash/paid basis, matching the rest of Reports (an unpaid
+    // on-account order hasn't actually collected any tax yet).
+    const taxByMonth = {};
+    const touch = k => taxByMonth[k] || (taxByMonth[k] = {
+      revenue: 0,
+      gstCollected: 0,
+      pstCollected: 0
+    });
+    paidSales.forEach(s => {
+      const k = mKey(s.settledDate || s.date);
+      const row = touch(k);
+      row.revenue += netRevenueOf(s);
+      row.gstCollected += s.gst || 0;
+      row.pstCollected += s.pst || 0;
+    });
+    // A refund backs its tax portion out of the month the refund was
+    // ISSUED (a credit-note adjustment), not out of the original sale's
+    // month — that's the normal treatment and keeps every month's
+    // numbers matching what actually happened that month.
+    (refunds || []).forEach(r => {
+      const orig = sales.find(s => s.id === r.originalSaleId);
+      if (!orig) return; // can't split tax out of a refund with no matching original sale
+      const row = touch(mKey(r.date));
+      row.revenue -= netRevenueOf(orig);
+      row.gstCollected -= orig.gst || 0;
+      row.pstCollected -= orig.pst || 0;
+    });
+    const expByMonth = {};
+    (expenses || []).forEach(e => {
+      const k = mKey(e.date);
+      const row = expByMonth[k] || (expByMonth[k] = {
+        total: 0,
+        gst: 0,
+        pst: 0
+      });
+      row.total += e.amount || 0;
+      row.gst += e.gst || 0;
+      row.pst += e.pst || 0;
+    });
+    const taxMonths = Array.from(new Set([...Object.keys(taxByMonth), ...Object.keys(expByMonth)])).sort();
+    const monthRow = m => {
+      const t = taxByMonth[m] || {
+        revenue: 0,
+        gstCollected: 0,
+        pstCollected: 0
+      };
+      const e = expByMonth[m] || {
+        total: 0,
+        gst: 0,
+        pst: 0
+      };
+      return {
+        m,
+        revenue: t.revenue,
+        gstCollected: t.gstCollected,
+        pstCollected: t.pstCollected,
+        expTotal: e.total,
+        gstITC: e.gst,
+        netGST: t.gstCollected - e.gst
+      };
+    };
+    const rows = taxMonths.map(monthRow);
+    const quarterOf = m => {
+      const [y, mo] = m.split("-");
+      return y + "-Q" + Math.ceil(parseInt(mo) / 3);
+    };
+    const byQuarter = {};
+    rows.forEach(r => {
+      const q = quarterOf(r.m);
+      const row = byQuarter[q] || (byQuarter[q] = {
+        q,
+        revenue: 0,
+        gstCollected: 0,
+        pstCollected: 0,
+        expTotal: 0,
+        gstITC: 0,
+        netGST: 0
+      });
+      row.revenue += r.revenue;
+      row.gstCollected += r.gstCollected;
+      row.pstCollected += r.pstCollected;
+      row.expTotal += r.expTotal;
+      row.gstITC += r.gstITC;
+      row.netGST += r.netGST;
+    });
+    const quarters = Object.values(byQuarter).sort((a, b) => a.q.localeCompare(b.q));
+    const taxTableHead = ["Period", "Revenue", "GST Collected", "GST Paid (ITC)", "Net GST Owing", "PST Collected"];
+    const taxRow = (label, r, i) => /*#__PURE__*/React.createElement("tr", {
+      key: label,
       style: {
         background: i % 2 === 0 ? C.white : C.cream
       }
@@ -13005,45 +14677,120 @@ function ReportsTab({
         padding: "8px 12px",
         fontWeight: 600
       }
-    }, MONTHS[parseInt(m.split("-")[1]) - 1], " ", m.split("-")[0]), /*#__PURE__*/React.createElement("td", {
+    }, label), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "8px 12px"
       }
-    }, fmt(mRev[m] || 0)), /*#__PURE__*/React.createElement("td", {
+    }, fmt(r.revenue)), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "8px 12px",
         color: C.blue,
         fontWeight: 600
       }
-    }, fmt(gstC)), /*#__PURE__*/React.createElement("td", {
+    }, fmt(r.gstCollected)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        color: C.green
+      }
+    }, fmt(r.gstITC)), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: "8px 12px",
+        fontWeight: 700,
+        color: r.netGST > 0 ? C.red : C.green
+      }
+    }, fmt(r.netGST)), /*#__PURE__*/React.createElement("td", {
       style: {
         padding: "8px 12px",
         color: C.purple,
         fontWeight: 600
       }
-    }, fmt(pstC)), /*#__PURE__*/React.createElement("td", {
+    }, fmt(r.pstCollected)));
+    return /*#__PURE__*/React.createElement(Card, null, /*#__PURE__*/React.createElement(SH, null, "CRA Tax Summary"), /*#__PURE__*/React.createElement("div", {
       style: {
-        padding: "8px 12px"
+        background: "#E3F2FD",
+        border: "1px solid #1976D2",
+        borderRadius: 8,
+        padding: "10px 14px",
+        marginBottom: 14,
+        fontSize: 13
       }
-    }, fmt(exp)), /*#__PURE__*/React.createElement("td", {
+    }, "GST Collected / GST Paid (ITC) here come straight from your actual sales and the GST you recorded on each expense — not an estimate. Revenue and tax are counted when an order is paid, and a refund backs its tax back out in the month the refund happens. PST has no equivalent input-tax-credit system for most purchases, so PST Collected is generally what you remit — it isn't netted against anything here. This is your source numbers, not a filed return: confirm your actual assigned filing frequency and any PST exemptions with your accountant before remitting."), /*#__PURE__*/React.createElement("div", {
       style: {
-        padding: "8px 12px",
-        color: C.green
-      }
-    }, fmt(gstP)), /*#__PURE__*/React.createElement("td", {
-      style: {
-        padding: "8px 12px",
         fontWeight: 700,
-        color: netGST > 0 ? C.red : C.green
+        fontSize: 13,
+        marginBottom: 6
       }
-    }, fmt(netGST)));
-  }))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: C.charcoal,
-      marginTop: 10
-    }
-  }, "* GST ITC estimates assume 5% GST on expenses. Verify with your accountant.")), view === "variance" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h3", {
+    }, "By Month"), /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 13,
+        marginBottom: 22
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: C.green
+      }
+    }, taxTableHead.map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: {
+        color: C.white,
+        padding: "9px 12px",
+        textAlign: "left",
+        fontSize: 12
+      }
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, rows.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 6,
+      style: {
+        padding: 20,
+        textAlign: "center",
+        color: C.charcoal
+      }
+    }, "No sales data yet.")) : rows.map((r, i) => taxRow(MONTHS[parseInt(r.m.split("-")[1]) - 1] + " " + r.m.split("-")[0], r, i)))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        fontSize: 13,
+        marginBottom: 6
+      }
+    }, "By Quarter ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: 400,
+        fontSize: 11,
+        color: C.gray
+      }
+    }, "(standard calendar quarters — use your actual assigned GST/HST period if it differs)")), /*#__PURE__*/React.createElement("table", {
+      style: {
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 13
+      }
+    }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+      style: {
+        background: C.dark
+      }
+    }, taxTableHead.map(h => /*#__PURE__*/React.createElement("th", {
+      key: h,
+      style: {
+        color: C.white,
+        padding: "9px 12px",
+        textAlign: "left",
+        fontSize: 12
+      }
+    }, h)))), /*#__PURE__*/React.createElement("tbody", null, quarters.length === 0 ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+      colSpan: 6,
+      style: {
+        padding: 20,
+        textAlign: "center",
+        color: C.charcoal
+      }
+    }, "No sales data yet.")) : quarters.map((r, i) => taxRow(r.q, r, i)))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.charcoal,
+        marginTop: 10
+      }
+    }, "* A refund only reduces GST/PST here when it's linked to the original sale (any refund issued through EOD's Refund flow is). GST Paid (ITC) totals whatever GST you entered on each expense receipt in the Expenses tab — enter it there for it to show up here. Always verify with your accountant before filing."));
+  })(), view === "variance" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h3", {
     style: {
       color: C.dark,
       marginBottom: 4
@@ -16480,6 +18227,7 @@ function App() {
   const [positions, setPositions, posLoaded] = usePersistedState("tog-positions", POSITIONS_INIT);
   const [schedule, setSchedule, schedLoaded] = usePersistedState("tog-schedule", []);
   const [requests, setRequests, reqLoaded] = usePersistedState("tog-requests", []);
+  const [payrollRuns, setPayrollRuns, prLoaded] = usePersistedState("tog-payroll-runs", []);
   const [kitchenOrders, setKitchenOrders] = useSharedState("tog-kitchen-queue", []);
   // Tab session hooks MUST be before early return (Rules of Hooks)
   const [tabSessions, setTabSessions] = useState({});
@@ -16984,7 +18732,9 @@ function App() {
     schedule: schedule,
     setSchedule: setSchedule,
     requests: requests,
-    setRequests: setRequests
+    setRequests: setRequests,
+    payrollRuns: payrollRuns,
+    setPayrollRuns: setPayrollRuns
   }) : /*#__PURE__*/React.createElement(MyInfoTab, {
     staffId: staffSession ? staffSession.staffId : null,
     staff: staff,
