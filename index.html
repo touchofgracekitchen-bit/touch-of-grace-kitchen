@@ -186,7 +186,7 @@ const DEFAULT_SETTINGS = {
     11: 15456,
     12: 15400
   },
-  expenseCategories: ["Lease", "Insurance", "Food & Inventory", "Supplies", "Marketing", "Utilities", "Staff Wages", "Licensing", "Other"],
+  expenseCategories: ["Lease", "Insurance", "Food & Inventory", "Supplies", "Marketing", "Utilities", "Staff Wages", "Payroll Taxes (Employer)", "Licensing", "Other"],
   menuCategories: ["Beverages", "Breakfast", "Chicken Box", "Patties", "Mains", "Donna's Specials", "Desserts", "Kids", "Sides"],
   inventoryCategories: ["Proteins", "Dry Goods", "Produce", "Pantry", "Spices", "Sides", "Beverages", "Packaging"],
   // Verified against CRA/BC published figures as of when this was set up.
@@ -6405,7 +6405,9 @@ function StaffTab({
   requests,
   setRequests,
   payrollRuns,
-  setPayrollRuns
+  setPayrollRuns,
+  expenses,
+  setExpenses
 }) {
   const [staffView, setStaffView] = useState("directory");
   const [expandedStaffId, setExpandedStaffId] = useState(null);
@@ -6612,7 +6614,14 @@ function StaffTab({
   const [form, setForm] = useState(blankForm);
   const mult = payPeriod === "weekly" ? 1 : payPeriod === "bi-weekly" ? 2 : 4;
   const periodsPerYear = 52 / mult;
-  const payrollTotal = staff.filter(s => s.type !== "Owner").reduce((sum, s) => sum + s.hourlyRate * s.hoursPerWeek * mult, 0);
+  // Payroll, vacation accrual, and the Run Payroll/T4/ROE pickers all include
+  // anyone with a real hourly rate set — regardless of "Owner"/"Family"/"Hired"
+  // type. An owner who's actually paid a wage for real work (set their Hourly
+  // Rate above $0 on their staff record) shows up here like anyone else; an
+  // owner who draws $0 through this app (e.g. takes dividends instead) stays
+  // out of it. "Owner" as a type still controls full app permissions — the two
+  // are independent.
+  const payrollTotal = staff.filter(s => s.hourlyRate > 0).reduce((sum, s) => sum + s.hourlyRate * s.hoursPerWeek * mult, 0);
   const [editRates, setEditRates] = useState(false);
   const rates = settings.payrollRates || DEFAULT_SETTINGS.payrollRates;
   const wsbc = settings.workSafeBC || DEFAULT_SETTINGS.workSafeBC;
@@ -7853,14 +7862,65 @@ function StaffTab({
         notes: runNotes.trim()
       };
       setPayrollRuns([...payrollRuns, rec]);
+
+      // Log the real cost of this run straight to Expenses, so it flows into
+      // the Income Statement, CRA Tax Summary, and everywhere else expenses
+      // are totalled — no manual re-entry. Wages and the employer's own
+      // matching CPP/CPP2 + EI are split into two lines since they're
+      // different kinds of cost; neither carries GST/PST (wages aren't a
+      // taxable supply). Each is tagged with this run's id so deleting the
+      // run cleans up its expense entries too, instead of leaving orphans.
+      const periodLabel = runPeriodStart + " to " + runPeriodEnd;
+      const employerCPPMatch = (rec.cpp || 0) + (rec.cpp2 || 0);
+      const employerEIShare = (rec.ei || 0) * 1.4;
+      const newExpenses = [{
+        id: rec.id + 1,
+        date: runPeriodEnd,
+        cat: "Staff Wages",
+        desc: "Payroll — " + runEmployee.name + " (" + periodLabel + ")",
+        amount: Math.round(rec.grossPay * 100) / 100,
+        supplier: "",
+        gst: 0,
+        pst: 0,
+        payrollRunId: rec.id
+      }];
+      const employerCost = Math.round((employerCPPMatch + employerEIShare) * 100) / 100;
+      if (employerCost > 0) {
+        newExpenses.push({
+          id: rec.id + 2,
+          date: runPeriodEnd,
+          cat: "Payroll Taxes (Employer)",
+          desc: "Employer CPP/CPP2/EI — " + runEmployee.name + " (" + periodLabel + ")",
+          amount: employerCost,
+          supplier: "",
+          gst: 0,
+          pst: 0,
+          payrollRunId: rec.id
+        });
+      }
+      setExpenses([...(expenses || []), ...newExpenses]);
+      // Make sure both categories exist in Settings so they show up in the
+      // Expenses category filter/breakdown even on an install that saved its
+      // category list before these existed.
+      const baseCats = settings.expenseCategories || DEFAULT_SETTINGS.expenseCategories;
+      const needsCatUpdate = !settings.expenseCategories || ["Staff Wages", "Payroll Taxes (Employer)"].some(c => !baseCats.includes(c));
+      if (needsCatUpdate) {
+        const mergedCats = Array.from(new Set([...baseCats, "Staff Wages", "Payroll Taxes (Employer)"]));
+        setSettings({
+          ...settings,
+          expenseCategories: mergedCats
+        });
+      }
       setRunPeriodStart("");
       setRunPeriodEnd("");
       setRunIncomeTax("");
       setRunNotes("");
-      alert("Payroll run saved for " + runEmployee.name + ".");
+      alert("Payroll run saved for " + runEmployee.name + " and logged to Expenses (" + fmt(rec.grossPay) + " wages" + (employerCost > 0 ? " + " + fmt(employerCost) + " employer payroll tax" : "") + ").");
     };
     const deleteRun = id => {
-      if (window.confirm("Delete this payroll run? This can't be undone.")) setPayrollRuns(payrollRuns.filter(r => r.id !== id));
+      if (!window.confirm("Delete this payroll run? This also removes the matching Staff Wages / Payroll Taxes entries it created in Expenses. Can't be undone.")) return;
+      setPayrollRuns(payrollRuns.filter(r => r.id !== id));
+      setExpenses((expenses || []).filter(e => e.payrollRunId !== id));
     };
     const sortedRuns = [...payrollRuns].sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
     const yearsWithRuns = Array.from(new Set(payrollRuns.map(r => r.periodEnd.slice(0, 4))));
@@ -8223,7 +8283,7 @@ function StaffTab({
       }
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "Select..."), staff.filter(s => s.type !== "Owner").map(s => /*#__PURE__*/React.createElement("option", {
+    }, "Select..."), staff.filter(s => s.hourlyRate > 0).map(s => /*#__PURE__*/React.createElement("option", {
       key: s.id,
       value: s.id
     }, s.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
@@ -8460,7 +8520,13 @@ function StaffTab({
       onClick: () => printSection("Payroll — " + runEmployee.name, runRef.current.innerHTML),
       color: C.blue,
       outline: true
-    }, "Download PDF")))), payrollSubView === "history" && /*#__PURE__*/React.createElement(Card, {
+    }, "Download PDF")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: C.gray,
+        marginTop: 6
+      }
+    }, "Saving also logs this run's wage cost and employer payroll taxes to Expenses automatically — you don't need to add it there yourself."))), payrollSubView === "history" && /*#__PURE__*/React.createElement(Card, {
       style: {
         padding: 0,
         overflow: "hidden"
@@ -8595,7 +8661,7 @@ function StaffTab({
       }
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "All employees"), staff.filter(s => s.type !== "Owner").map(s => /*#__PURE__*/React.createElement("option", {
+    }, "All employees"), staff.filter(s => s.hourlyRate > 0).map(s => /*#__PURE__*/React.createElement("option", {
       key: s.id,
       value: s.id
     }, s.name)))), /*#__PURE__*/React.createElement(Btn, {
@@ -8886,7 +8952,7 @@ function StaffTab({
       }
     }, /*#__PURE__*/React.createElement("option", {
       value: ""
-    }, "Select..."), staff.filter(s => s.type !== "Owner").map(s => /*#__PURE__*/React.createElement("option", {
+    }, "Select..."), staff.filter(s => s.hourlyRate > 0).map(s => /*#__PURE__*/React.createElement("option", {
       key: s.id,
       value: s.id
     }, s.name)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
@@ -9432,7 +9498,7 @@ function StaffTab({
         fontWeight: 700,
         color: Math.abs(actualHoursThisPeriod(s) - s.hoursPerWeek * mult) > 4 ? C.orange : C.green
       }
-    }, actualHoursThisPeriod(s).toFixed(1))), s.type !== "Owner" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    }, actualHoursThisPeriod(s).toFixed(1))), s.hourlyRate > 0 && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 11,
         color: C.charcoal
@@ -9499,7 +9565,7 @@ function StaffTab({
         gap: 6,
         flexWrap: "wrap"
       }
-    }, s.type !== "Owner" && /*#__PURE__*/React.createElement(Btn, {
+    }, s.hourlyRate > 0 && /*#__PURE__*/React.createElement(Btn, {
       small: true,
       onClick: () => {
         setVacStaffId(s.id);
@@ -9540,7 +9606,7 @@ function StaffTab({
       padding: "8px 12px",
       textAlign: "left"
     }
-  }, h)))), /*#__PURE__*/React.createElement("tbody", null, staff.filter(s => s.type !== "Owner").map((s, i) => {
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, staff.filter(s => s.hourlyRate > 0).map((s, i) => {
     const gross = s.hourlyRate * s.hoursPerWeek * mult;
     const est = estimateDeductions(gross);
     const pos = getPos(s);
@@ -18734,7 +18800,9 @@ function App() {
     requests: requests,
     setRequests: setRequests,
     payrollRuns: payrollRuns,
-    setPayrollRuns: setPayrollRuns
+    setPayrollRuns: setPayrollRuns,
+    expenses: expenses,
+    setExpenses: setExpenses
   }) : /*#__PURE__*/React.createElement(MyInfoTab, {
     staffId: staffSession ? staffSession.staffId : null,
     staff: staff,
