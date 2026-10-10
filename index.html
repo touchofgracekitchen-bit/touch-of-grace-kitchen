@@ -183,10 +183,11 @@ const TOG_SYNC=(function(){
   function emit(st){st.subs.forEach(f=>{try{f(st.list);}catch(e){}});}
   function sortList(st){const o=st.ords;st.list=st.list.slice().sort((a,b)=>(o[ridOf(st,a)]||0)-(o[ridOf(st,b)]||0));}
   function store(key,def){
-    let st=S.stores[key];if(st)return st;
+    let st=S.stores[key];
+    if(st){if(st.noData&&!st.list.length&&Array.isArray(def)&&def.length){st.list=def;st.noData=false;def.forEach((x,i)=>{const r=ridOf(st,x);if(r!=null){st.snap[r]=JSON.stringify(x);st.ords[r]=i*1024;}});}return st;}
     const idf=TOG_RECORD_KEYS[key]||"id";
     const c=LS.get(ck(key));
-    let list,ords={};
+    let list,ords={},noData=false;
     if(c&&Array.isArray(c.v)){list=c.v;ords=c.ords||{};}
     else{
       // Older versions of the app kept a whole-list copy under tog_ / tog_shared_.
@@ -194,8 +195,9 @@ const TOG_SYNC=(function(){
       // whole - the cloud copy replaces it on load.
       const old=(typeof tog_readLocal==="function")?(tog_readLocal("tog_"+key)||tog_readLocal("tog_shared_"+key)):null;
       list=(old&&Array.isArray(old.v))?old.v:(Array.isArray(def)?def:[]);
+      noData=!(old&&Array.isArray(old.v))&&!Array.isArray(def);
     }
-    st={key,idf,list,ords,snap:{},subs:new Set(),snapAt:0};
+    st={key,idf,list,ords,snap:{},subs:new Set(),snapAt:0,noData};
     st.list.forEach((x,i)=>{const r=ridOf(st,x);if(r==null)return;st.snap[r]=JSON.stringify(x);if(st.ords[r]==null)st.ords[r]=i*1024;});
     S.stores[key]=st;return st;
   }
@@ -274,7 +276,7 @@ const TOG_SYNC=(function(){
       if(!r||!TOG_RECORD_KEYS[r.key])return;
       bumpCursor(r.updated_at);
       if(pend.has(K(r.key,r.rid)))return; // this device has a newer, unsent change to this item
-      const st=store(r.key);const cur=st.snap[r.rid];
+      const st=store(r.key);st.noData=false;const cur=st.snap[r.rid];
       if(r.deleted){if(cur===undefined)return;st.list=st.list.filter(x=>ridOf(st,x)!==r.rid);delete st.snap[r.rid];delete st.ords[r.rid];touched.add(st);return;}
       const j=JSON.stringify(r.data);const ord=Number(r.ord)||0;
       if(cur!==undefined&&st.ords[r.rid]===ord&&tog_sameJson(cur,r.data))return;
@@ -297,9 +299,10 @@ const TOG_SYNC=(function(){
     }
     const byKey={};all.forEach(r=>{bumpCursor(r.updated_at);(byKey[r.key]=byKey[r.key]||[]).push(r);});
     Object.keys(TOG_RECORD_KEYS).forEach(key=>{
-      const rows=byKey[key];const st=store(key);
-      if(!rows)return; // nothing in the cloud for this list yet: keep what is here; it is uploaded item by item on the next save
-      st.list=[];st.snap={};st.ords={};
+      const rows=byKey[key];
+      if(!rows)return; // nothing in the cloud for this list: leave it to the screen that uses it (and its built-in defaults)
+      const st=store(key); // nothing in the cloud for this list yet: keep what is here; it is uploaded item by item on the next save
+      st.list=[];st.snap={};st.ords={};st.noData=false;
       rows.forEach(r=>{if(r.deleted)return;st.list.push(r.data);st.snap[r.rid]=JSON.stringify(r.data);st.ords[r.rid]=Number(r.ord)||0;});
       // re-apply this device's own unsent changes on top
       S.outbox.filter(o=>o.key===key).forEach(o=>{
